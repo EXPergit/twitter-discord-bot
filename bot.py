@@ -139,9 +139,15 @@ class TwitterDiscordBot(discord.Client):
             
             # If no containers found, try extracting from links directly
             if not tweet_containers:
-                # Find all status links
-                status_links = soup.find_all('a', href=re.compile(r'/\w+/status/\d+'))
+                # Find all status links - be more flexible with pattern
+                status_links = soup.find_all('a', href=re.compile(r'status/\d+', re.IGNORECASE))
                 print(f"🔗 Found {len(status_links)} status links in HTML")
+                
+                # Debug: print first few links found
+                all_links = soup.find_all('a', href=True)
+                print(f"📊 Total links in HTML: {len(all_links)}")
+                if all_links[:3]:
+                    print(f"📋 Sample links: {[link.get('href', '')[:80] for link in all_links[:3]]}")
                 
                 tweet_ids_found = set()
                 for link in status_links[:20]:
