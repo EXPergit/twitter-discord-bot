@@ -1,10 +1,15 @@
 {
+  "name": "twitter-x-fetcher",
+  "version": "1.0.0",
+  "description": "Twitter/X tweet fetcher using Puppeteer",
   "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
-    "cheerio": "^1.1.2",
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "node-fetch": "^3.3.2",
-    "puppeteer": "^24.31.0"
+    "express": "^4.18.2",
+    "puppeteer": "^21.6.1",
+    "cors": "^2.8.5"
   }
 }

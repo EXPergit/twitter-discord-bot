@@ -1,0 +1,6 @@
+[
+  {
+    "name": "INSTRUCTIONS",
+    "value": "To add authentication cookies: 1) Log into X.com in your browser 2) Open DevTools (F12) 3) Go to Application tab 4) Under Cookies, copy all cookies for x.com 5) Format as JSON array and paste here. Example: [{\"name\": \"auth_token\", \"value\": \"...\", \"domain\": \".x.com\", \"path\": \"/\"}]"
+  }
+]
