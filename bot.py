@@ -120,10 +120,40 @@ class TwitterDiscordBot(discord.Client):
         try:
             soup = BeautifulSoup(html, 'html.parser')
             
-            # Find all tweet containers
+            # Try multiple selectors to find tweet containers
             tweet_containers = soup.find_all('article', attrs={'data-testid': 'tweet'})
             
+            # Fallback 1: Try any article tags
+            if not tweet_containers:
+                tweet_containers = soup.find_all('article')
+            
+            # Fallback 2: Try divs with role="article"
+            if not tweet_containers:
+                tweet_containers = soup.find_all('div', {'role': 'article'})
+            
+            # Fallback 3: Try any div with data-testid containing "tweet"
+            if not tweet_containers:
+                tweet_containers = soup.find_all('div', {'data-testid': lambda x: x and 'tweet' in x.lower() if x else False})
+            
             print(f"🔍 Found {len(tweet_containers)} tweet containers")
+            
+            # If no containers found, try extracting from links directly
+            if not tweet_containers:
+                # Find all status links
+                status_links = soup.find_all('a', href=re.compile(r'/\w+/status/\d+'))
+                print(f"🔗 Found {len(status_links)} status links in HTML")
+                
+                tweet_ids_found = set()
+                for link in status_links[:20]:
+                    match = re.search(r'/status/(\d+)', link['href'])
+                    if match:
+                        tweet_id = match.group(1)
+                        if tweet_id not in tweet_ids_found:
+                            tweet_ids_found.add(tweet_id)
+                            # Get parent containers
+                            parent = link.find_parent(['article', 'div'])
+                            if parent:
+                                tweet_containers.append(parent)
             
             for container in tweet_containers[:10]:  # Get top 10
                 try:
@@ -143,16 +173,22 @@ class TwitterDiscordBot(discord.Client):
                     if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
                         continue
                     
-                    # Extract tweet text
+                    # Extract tweet text - try multiple selectors
                     text_elem = container.find('div', {'data-testid': 'tweetText'})
-                    text = text_elem.get_text(strip=True) if text_elem else ""
+                    if not text_elem:
+                        text_elem = container.find('div', {'lang': True})
+                    if not text_elem:
+                        # Get all text from container
+                        text = container.get_text(strip=True)
+                    else:
+                        text = text_elem.get_text(strip=True)
                     
                     if not text:
                         continue
                     
                     # Extract media URL if present
                     media_url = None
-                    img = container.find('img', {'alt': re.compile(r'Image')})
+                    img = container.find('img', {'alt': lambda x: x and 'image' in x.lower() if x else False})
                     if img:
                         media_url = img.get('src')
                     
@@ -164,9 +200,15 @@ class TwitterDiscordBot(discord.Client):
                             if source:
                                 media_url = source.get('src')
                     
+                    # Look for video link in text
+                    if not media_url:
+                        video_match = re.search(r'(https?://[^\s]+\.(?:mp4|webm|mov))', text)
+                        if video_match:
+                            media_url = video_match.group(1)
+                    
                     tweets.append({
                         'id': tweet_id,
-                        'content': text,
+                        'content': text[:280],  # Limit to 280 chars
                         'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
                         'media_url': media_url
                     })
