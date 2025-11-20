@@ -5,8 +5,7 @@ import json
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-from zenrows import ZenRowsClient
-from bs4 import BeautifulSoup
+import snscrape.modules.twitter as sntwitter
 import re
 
 load_dotenv()
@@ -14,7 +13,6 @@ load_dotenv()
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 TWITTER_USERNAME = os.getenv("TWITTER_USERNAME", "nikhilraj__")
-ZENROWS_API_KEY = os.getenv("ZENROWS_API_KEY")
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
 
 LAST_TWEET_FILE = "last_tweet.json"
@@ -27,7 +25,6 @@ class TwitterDiscordBot(discord.Client):
         
         self.channel = None
         self.last_tweet_id = self.load_last_tweet_id()
-        self.client = ZenRowsClient(ZENROWS_API_KEY) if ZENROWS_API_KEY else None
 
     def load_last_tweet_id(self):
         if os.path.exists(LAST_TWEET_FILE):
@@ -61,7 +58,7 @@ class TwitterDiscordBot(discord.Client):
             return
 
         print(f"📡 Monitoring Twitter @{TWITTER_USERNAME}")
-        print(f"🔑 Using ZenRows API")
+        print(f"🔑 Using snscrape (free, no API needed)")
         print(f"⏱️ Poll interval: {POLL_INTERVAL_SECONDS}s")
 
         self.check_tweets.start()
@@ -85,24 +82,42 @@ class TwitterDiscordBot(discord.Client):
         await self.wait_until_ready()
 
     async def get_new_tweets(self):
-        if not self.client:
-            print("❌ ZenRows client not initialized")
-            return []
-
         try:
-            url = f"https://twitter.com/{TWITTER_USERNAME}"
+            print(f"🌐 Fetching tweets from @{TWITTER_USERNAME}...")
             
-            print(f"🌐 Fetching {url} via ZenRows...")
-            response = self.client.get(url, params={
-                "js_render": "true",
-                "premium_proxy": "true"
-            })
+            tweets = []
             
-            html = response.text
-            print(f"📄 Received {len(html)} bytes of HTML")
+            # Use snscrape to get tweets
+            scraper = sntwitter.TwitterProfileScraper(TWITTER_USERNAME)
             
-            tweets = self.parse_tweets_from_html(html)
-            print(f"✅ Parsed {len(tweets)} tweets from HTML")
+            for i, tweet in enumerate(scraper.get_items()):
+                if i >= 10:  # Get top 10
+                    break
+                
+                tweet_id = str(tweet.id)
+                
+                # Skip if we've seen this tweet before
+                if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
+                    continue
+                
+                tweet_data = {
+                    'id': tweet_id,
+                    'content': tweet.content[:280] if tweet.content else "",
+                    'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
+                    'media_url': None,
+                    'timestamp': tweet.date
+                }
+                
+                # Check for media (photos/videos)
+                if tweet.media:
+                    for media in tweet.media:
+                        if hasattr(media, 'downloadUrl'):
+                            tweet_data['media_url'] = media.downloadUrl
+                            break
+                
+                tweets.append(tweet_data)
+            
+            print(f"✅ Found {len(tweets)} new tweets")
             
             if tweets:
                 self.save_last_tweet_id(tweets[0]["id"])
@@ -113,121 +128,6 @@ class TwitterDiscordBot(discord.Client):
             print(f"❌ Error fetching tweets: {e}")
             return []
 
-    def parse_tweets_from_html(self, html):
-        """Parse tweets from Twitter HTML using BeautifulSoup"""
-        tweets = []
-        
-        try:
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Try multiple selectors to find tweet containers
-            tweet_containers = soup.find_all('article', attrs={'data-testid': 'tweet'})
-            
-            # Fallback 1: Try any article tags
-            if not tweet_containers:
-                tweet_containers = soup.find_all('article')
-            
-            # Fallback 2: Try divs with role="article"
-            if not tweet_containers:
-                tweet_containers = soup.find_all('div', {'role': 'article'})
-            
-            # Fallback 3: Try any div with data-testid containing "tweet"
-            if not tweet_containers:
-                tweet_containers = soup.find_all('div', {'data-testid': lambda x: x and 'tweet' in x.lower() if x else False})
-            
-            print(f"🔍 Found {len(tweet_containers)} tweet containers")
-            
-            # If no containers found, try extracting from links directly
-            if not tweet_containers:
-                # Find all status links - be more flexible with pattern
-                status_links = soup.find_all('a', href=re.compile(r'status/\d+', re.IGNORECASE))
-                print(f"🔗 Found {len(status_links)} status links in HTML")
-                
-                # Debug: print first few links found
-                all_links = soup.find_all('a', href=True)
-                print(f"📊 Total links in HTML: {len(all_links)}")
-                if all_links[:3]:
-                    print(f"📋 Sample links: {[link.get('href', '')[:80] for link in all_links[:3]]}")
-                
-                tweet_ids_found = set()
-                for link in status_links[:20]:
-                    match = re.search(r'/status/(\d+)', link['href'])
-                    if match:
-                        tweet_id = match.group(1)
-                        if tweet_id not in tweet_ids_found:
-                            tweet_ids_found.add(tweet_id)
-                            # Get parent containers
-                            parent = link.find_parent(['article', 'div'])
-                            if parent:
-                                tweet_containers.append(parent)
-            
-            for container in tweet_containers[:10]:  # Get top 10
-                try:
-                    # Extract tweet ID
-                    tweet_link = container.find('a', href=re.compile(r'/\w+/status/\d+'))
-                    if not tweet_link:
-                        continue
-                    
-                    # Get tweet ID from URL
-                    match = re.search(r'/status/(\d+)', tweet_link['href'])
-                    if not match:
-                        continue
-                    
-                    tweet_id = match.group(1)
-                    
-                    # Skip if we've seen this tweet before
-                    if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
-                        continue
-                    
-                    # Extract tweet text - try multiple selectors
-                    text_elem = container.find('div', {'data-testid': 'tweetText'})
-                    if not text_elem:
-                        text_elem = container.find('div', {'lang': True})
-                    if not text_elem:
-                        # Get all text from container
-                        text = container.get_text(strip=True)
-                    else:
-                        text = text_elem.get_text(strip=True)
-                    
-                    if not text:
-                        continue
-                    
-                    # Extract media URL if present
-                    media_url = None
-                    img = container.find('img', {'alt': lambda x: x and 'image' in x.lower() if x else False})
-                    if img:
-                        media_url = img.get('src')
-                    
-                    # Look for video in iframe or video tags
-                    if not media_url:
-                        video = container.find('video')
-                        if video:
-                            source = video.find('source')
-                            if source:
-                                media_url = source.get('src')
-                    
-                    # Look for video link in text
-                    if not media_url:
-                        video_match = re.search(r'(https?://[^\s]+\.(?:mp4|webm|mov))', text)
-                        if video_match:
-                            media_url = video_match.group(1)
-                    
-                    tweets.append({
-                        'id': tweet_id,
-                        'content': text[:280],  # Limit to 280 chars
-                        'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
-                        'media_url': media_url
-                    })
-                    
-                except Exception as e:
-                    print(f"⚠️ Error parsing individual tweet: {e}")
-                    continue
-            
-            return list(reversed(tweets))  # Reverse to get oldest first
-            
-        except Exception as e:
-            print(f"❌ Error parsing HTML: {e}")
-            return []
 
     async def post_tweet_to_discord(self, tweet):
         try:
@@ -261,8 +161,8 @@ def validate_config():
         errors.append("DISCORD_BOT_TOKEN is required")
     if not DISCORD_CHANNEL_ID:
         errors.append("DISCORD_CHANNEL_ID is required")
-    if not ZENROWS_API_KEY:
-        errors.append("ZENROWS_API_KEY is required")
+    if not TWITTER_USERNAME:
+        errors.append("TWITTER_USERNAME is required")
     
     if errors:
         print("❌ Configuration errors:")
@@ -274,7 +174,7 @@ def validate_config():
 
 
 if __name__ == "__main__":
-    print("🚀 Starting Twitter to Discord bot (ZenRows)...")
+    print("🚀 Starting Twitter to Discord bot (snscrape)...")
     
     if not validate_config():
         exit(1)
