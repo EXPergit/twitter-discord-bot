@@ -1,15 +1,16 @@
 {
-  "name": "twitter-x-fetcher",
-  "version": "1.0.0",
-  "description": "Twitter/X tweet fetcher using Puppeteer",
+  "name": "discord-twitter-bot",
+  "version": "2.0.0",
+  "description": "Discord bot that monitors and posts tweets from tracked X.com accounts",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "discord.js": "^14.14.0",
     "puppeteer": "^21.6.1",
-    "cors": "^2.8.5"
+    "dotenv": "^16.3.1",
+    "fs-extra": "^11.1.1"
   }
 }
