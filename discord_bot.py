@@ -97,8 +97,11 @@ async def fetch_tweets_loop():
                         )
                         embed.set_footer(text="Posted from X.com")
                         
-                        # Send to Discord
-                        await channel.send(embed=embed)
+                        # Send to Discord (only if channel supports sending)
+                        if hasattr(channel, 'send'):
+                            await channel.send(embed=embed)
+                        else:
+                            print(f'⚠️ Channel {DISCORD_CHANNEL_ID} does not support sending messages')
                         
                         # Mark as posted
                         posted_tweets.append(tweet_id)
