@@ -114,61 +114,70 @@ class TwitterDiscordBot(discord.Client):
             return []
 
     def parse_tweets_from_html(self, html):
-        """Parse tweets from Twitter HTML - extract tweet data from JSON in script tags"""
+        """Parse tweets from Twitter HTML"""
         tweets = []
         
         try:
             soup = BeautifulSoup(html, 'html.parser')
             
-            # Try to find tweet data in script tags (Twitter embeds JSON data)
+            # Debug: Check what's actually in the HTML
+            all_links = soup.find_all('a', href=True)
+            status_links = [l for l in all_links if re.search(r'/status/\d+', l.get('href', ''))]
+            print(f"📊 Total links: {len(all_links)}, Status links: {len(status_links)}")
+            
+            if status_links:
+                print(f"📝 Sample status links: {[l['href'][:80] for l in status_links[:3]]}")
+            
+            # Try to find tweet data in script tags
             script_tags = soup.find_all('script', {'type': 'application/json'})
             print(f"🔍 Found {len(script_tags)} JSON script tags")
             
             for script in script_tags:
                 try:
                     data = json.loads(script.string)
-                    # Extract tweets from nested structure
-                    if isinstance(data, dict):
-                        tweets.extend(self._extract_tweets_from_json(data))
+                    tweets.extend(self._extract_tweets_from_json(data))
                 except:
                     pass
             
-            # Fallback: Look for tweet containers by various selectors
-            if not tweets:
-                print("🔄 Using fallback HTML parsing...")
+            # Fallback: Extract tweets from status links
+            if not tweets and status_links:
+                print("🔄 Extracting tweets from status links...")
                 
-                # Find div elements that might contain tweets
-                for article in soup.find_all(['article', 'div']):
-                    # Look for status links
-                    link = article.find('a', href=re.compile(r'/\w+/status/\d+'))
-                    if not link:
-                        continue
-                    
-                    match = re.search(r'/status/(\d+)', link['href'])
+                seen_ids = set()
+                for link in status_links[:10]:
+                    href = link.get('href', '')
+                    match = re.search(r'/status/(\d+)', href)
                     if not match:
                         continue
                     
                     tweet_id = match.group(1)
                     
+                    if tweet_id in seen_ids:
+                        continue
+                    seen_ids.add(tweet_id)
+                    
                     if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
                         continue
                     
-                    # Extract text content
-                    text = article.get_text(strip=True)[:280]
-                    if not text or len(text) < 5:
-                        continue
-                    
-                    tweets.append({
-                        'id': tweet_id,
-                        'content': text,
-                        'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
-                        'media_url': None
-                    })
+                    # Get parent container and extract text
+                    parent = link.find_parent(['div', 'article', 'section'])
+                    if parent:
+                        text = parent.get_text(strip=True)[:280]
+                        if text and len(text) > 10:
+                            tweets.append({
+                                'id': tweet_id,
+                                'content': text,
+                                'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
+                                'media_url': None
+                            })
             
+            print(f"💾 Total tweets extracted: {len(tweets)}")
             return list(reversed(tweets))[:10]
             
         except Exception as e:
             print(f"❌ Error parsing HTML: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     def _extract_tweets_from_json(self, data, tweets=None):
