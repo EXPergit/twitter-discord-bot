@@ -55,11 +55,22 @@ class TwitterDiscordBot(discord.Client):
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
         chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        # Use the correct chromium path from nix store
+        import subprocess
+        chromium_path = subprocess.check_output(["which", "chromium"]).decode().strip()
+        chrome_options.binary_location = chromium_path
         
         try:
-            self.driver = webdriver.Chrome(options=chrome_options)
+            from webdriver_manager.chrome import ChromeDriverManager
+            from selenium.webdriver.chrome.service import Service
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
             print("✅ Selenium Chrome driver initialized")
         except Exception as e:
             print(f"❌ Failed to initialize Chrome driver: {e}")
