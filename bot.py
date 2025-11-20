@@ -5,9 +5,7 @@ import json
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-import requests
-from bs4 import BeautifulSoup
-import re
+import snscrape.modules.twitter as sntwitter
 import time
 
 load_dotenv()
@@ -27,20 +25,7 @@ class TwitterDiscordBot(discord.Client):
         
         self.channel = None
         self.last_tweet_id = self.load_last_tweet_id()
-        self.session = requests.Session()
-        self.setup_session()
-
-    def setup_session(self):
-        """Setup session with proper headers to bypass basic anti-bot measures"""
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        }
-        self.session.headers.update(headers)
+        self.last_request_time = 0
 
     def load_last_tweet_id(self):
         if os.path.exists(LAST_TWEET_FILE):
@@ -74,7 +59,7 @@ class TwitterDiscordBot(discord.Client):
             return
 
         print(f"📡 Monitoring Twitter @{TWITTER_USERNAME}")
-        print(f"🔑 Using FREE web scraping (no API needed)")
+        print(f"🔑 Using snscrape (FREE - no API keys needed)")
         print(f"⏱️ Poll interval: {POLL_INTERVAL_SECONDS}s")
 
         self.check_tweets.start()
@@ -98,151 +83,83 @@ class TwitterDiscordBot(discord.Client):
         await self.wait_until_ready()
 
     async def get_new_tweets(self):
-        """Fetch tweets using free web scraping - NO API KEY NEEDED"""
+        """Fetch tweets using snscrape (completely FREE)"""
+        # Rate limiting to avoid overwhelming Twitter
+        now = time.time()
+        min_interval = 10
+        if now - self.last_request_time < min_interval:
+            wait_time = min_interval - (now - self.last_request_time)
+            await asyncio.sleep(wait_time)
+        
+        self.last_request_time = time.time()
+        
         try:
-            print(f"🌐 Fetching tweets from @{TWITTER_USERNAME}...")
-            
-            # Multiple URLs to try
-            urls = [
-                f"https://twitter.com/{TWITTER_USERNAME}",
-                f"https://nitter.net/{TWITTER_USERNAME}",  # Nitter mirror (lightweight)
-            ]
+            print(f"🌐 Fetching tweets from @{TWITTER_USERNAME} via snscrape...")
             
             tweets = []
             
-            for url in urls:
+            # Try to scrape with retry logic
+            for retry in range(3):
                 try:
-                    print(f"📤 Trying: {url}")
+                    # Get tweets from the user's timeline
+                    scraper = sntwitter.TwitterProfileScraper(TWITTER_USERNAME)
                     
-                    # Add retry logic
-                    for attempt in range(3):
-                        try:
-                            response = self.session.get(url, timeout=15)
-                            
-                            if response.status_code == 200:
-                                print(f"✅ Got response ({len(response.text)} bytes)")
-                                tweets = self.parse_tweets(response.text)
-                                
-                                if tweets:
-                                    print(f"✅ Found {len(tweets)} tweets from {url}")
-                                    self.save_last_tweet_id(tweets[0]["id"])
-                                    return tweets
-                                else:
-                                    print(f"⏭️ No tweets found at {url}, trying next source...")
-                                break
-                            elif response.status_code == 429:
-                                wait_time = 2 ** attempt
-                                print(f"⚠️ Rate limited. Waiting {wait_time}s before retry...")
-                                await asyncio.sleep(wait_time)
-                            else:
-                                print(f"⚠️ Status {response.status_code}")
-                                break
-                                
-                        except Exception as e:
-                            wait_time = 2 ** attempt
-                            print(f"⚠️ Attempt {attempt + 1} failed: {str(e)[:50]}")
-                            if attempt < 2:
-                                await asyncio.sleep(wait_time)
+                    tweet_count = 0
+                    for tweet in scraper.get_items():
+                        # Limit to 10 tweets per check
+                        if tweet_count >= 10:
+                            break
+                        
+                        tweet_id = str(tweet.id)
+                        
+                        # Skip tweets we've already seen
+                        if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
+                            continue
+                        
+                        tweet_text = tweet.content if tweet.content else ""
+                        
+                        # Skip very short tweets (likely errors)
+                        if len(tweet_text.strip()) < 3:
+                            continue
+                        
+                        tweets.append({
+                            'id': tweet_id,
+                            'content': tweet_text[:280],
+                            'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
+                            'created_at': tweet.date
+                        })
+                        
+                        tweet_count += 1
                     
-                except Exception as url_err:
-                    print(f"⚠️ Error with {url}: {str(url_err)[:50]}")
-                    continue
-            
-            return tweets
-
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            return []
-
-    def parse_tweets(self, html):
-        """Parse tweets from HTML"""
-        tweets = []
-        
-        try:
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            # Strategy 1: Look for tweets with status URLs
-            tweet_links = soup.find_all('a', href=re.compile(r'/\w+/status/\d+'))
-            print(f"🔍 Found {len(tweet_links)} tweet links")
-            
-            seen_ids = set()
-            
-            for link in tweet_links[:20]:
-                try:
-                    href = link.get('href', '')
-                    match = re.search(r'/status/(\d+)', href)
-                    if not match:
-                        continue
-                    
-                    tweet_id = match.group(1)
-                    
-                    if tweet_id in seen_ids:
-                        continue
-                    seen_ids.add(tweet_id)
-                    
-                    if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
-                        continue
-                    
-                    # Get parent article/div for text content
-                    parent = link.find_parent(['article', 'div', 'main'])
-                    text = ""
-                    
-                    if parent:
-                        # Try to find tweet text div
-                        text_div = parent.find('div', attrs={'data-testid': 'tweetText'})
-                        if text_div:
-                            text = text_div.get_text(strip=True)[:280]
-                        else:
-                            # Fallback: get all text from parent
-                            text = parent.get_text(strip=True)[:500]
-                    
-                    # Clean up text - remove extra whitespace
-                    text = ' '.join(text.split())
-                    
-                    if not text or len(text) < 5:
-                        text = f"New tweet from @{TWITTER_USERNAME}"
-                    
-                    tweets.append({
-                        'id': tweet_id,
-                        'content': text,
-                        'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
-                    })
+                    if tweets:
+                        print(f"✅ Successfully fetched {len(tweets)} new tweet(s)")
+                        self.save_last_tweet_id(tweets[0]["id"])
+                        return tweets
+                    else:
+                        print(f"⏭️ No new tweets found")
+                        return []
                     
                 except Exception as e:
-                    continue
+                    error_msg = str(e)
+                    
+                    # Check if it's a rate limit or blocking error
+                    if "blocked" in error_msg.lower() or "429" in error_msg or "rate" in error_msg.lower():
+                        wait_time = (2 ** retry) * 5  # Exponential backoff: 5s, 10s, 20s
+                        print(f"⚠️ Rate limited/blocked. Retry {retry + 1}/3 in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"❌ Error on attempt {retry + 1}: {error_msg[:80]}")
+                        if retry < 2:
+                            await asyncio.sleep(2 ** retry)
+                            continue
+                        else:
+                            raise
             
-            # Strategy 2: If no tweets found, try to extract from any tweet-like content
-            if not tweets:
-                print("🔎 Using fallback extraction method...")
-                # Look for any div with nested tweet-like structure
-                for elem in soup.find_all(['article', 'div'], limit=50):
-                    text = elem.get_text(strip=True)
-                    # Check if element has tweet-like characteristics
-                    if len(text) > 20 and len(text) < 300:
-                        # Try to find tweet ID in nearby links
-                        links = elem.find_all('a', href=re.compile(r'/status/\d+'))
-                        if links:
-                            for l in links:
-                                match = re.search(r'/status/(\d+)', l.get('href', ''))
-                                if match:
-                                    tweet_id = match.group(1)
-                                    if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
-                                        continue
-                                    
-                                    tweets.append({
-                                        'id': tweet_id,
-                                        'content': text,
-                                        'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
-                                    })
-                                    break
-                            if len(tweets) >= 5:
-                                break
-            
-            print(f"💾 Extracted {len(tweets)} tweets")
-            return list(reversed(tweets))[:10]
-        
+            return []
+
         except Exception as e:
-            print(f"❌ Parse error: {e}")
+            print(f"❌ Failed to fetch tweets: {str(e)[:100]}")
             return []
 
     async def post_tweet_to_discord(self, tweet):
@@ -250,7 +167,7 @@ class TwitterDiscordBot(discord.Client):
             embed = discord.Embed(
                 description=tweet.get("content", "")[:2000],
                 color=0x1DA1F2,
-                timestamp=datetime.now(),
+                timestamp=tweet.get('created_at', datetime.now()),
                 url=tweet.get("url", "")
             )
 
@@ -259,13 +176,13 @@ class TwitterDiscordBot(discord.Client):
                 url=f"https://twitter.com/{TWITTER_USERNAME}",
             )
 
-            embed.set_footer(text="Twitter")
+            embed.set_footer(text="Twitter • via snscrape")
 
             await self.channel.send(embed=embed)
             print(f"✅ Posted tweet {tweet['id']} to Discord")
 
         except Exception as e:
-            print(f"❌ Error posting: {e}")
+            print(f"❌ Error posting tweet: {e}")
 
 
 def validate_config():
@@ -288,7 +205,7 @@ def validate_config():
 
 
 if __name__ == "__main__":
-    print("🚀 Starting Twitter to Discord bot (FREE method)...")
+    print("🚀 Starting Twitter to Discord bot (FREE - snscrape)...")
     
     if not validate_config():
         exit(1)
