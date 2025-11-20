@@ -5,15 +5,16 @@ import json
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-import snscrape.modules.twitter as sntwitter
+from zenrows import ZenRowsClient
+from bs4 import BeautifulSoup
 import re
-import time
 
 load_dotenv()
 
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 TWITTER_USERNAME = os.getenv("TWITTER_USERNAME", "nikhilraj__")
+ZENROWS_API_KEY = os.getenv("ZENROWS_API_KEY")
 POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "60"))
 
 LAST_TWEET_FILE = "last_tweet.json"
@@ -26,6 +27,7 @@ class TwitterDiscordBot(discord.Client):
         
         self.channel = None
         self.last_tweet_id = self.load_last_tweet_id()
+        self.client = ZenRowsClient(ZENROWS_API_KEY) if ZENROWS_API_KEY else None
 
     def load_last_tweet_id(self):
         if os.path.exists(LAST_TWEET_FILE):
@@ -59,7 +61,7 @@ class TwitterDiscordBot(discord.Client):
             return
 
         print(f"📡 Monitoring Twitter @{TWITTER_USERNAME}")
-        print(f"🔑 Using snscrape (free, no API needed)")
+        print(f"🔑 Using ZenRows API with JS rendering")
         print(f"⏱️ Poll interval: {POLL_INTERVAL_SECONDS}s")
 
         self.check_tweets.start()
@@ -83,66 +85,118 @@ class TwitterDiscordBot(discord.Client):
         await self.wait_until_ready()
 
     async def get_new_tweets(self):
-        try:
-            print(f"🌐 Fetching tweets from @{TWITTER_USERNAME}...")
-            
-            tweets = []
-            max_retries = 3
-            retry_count = 0
-            
-            while retry_count < max_retries:
-                try:
-                    # Use snscrape to get tweets
-                    scraper = sntwitter.TwitterProfileScraper(TWITTER_USERNAME)
-                    
-                    for i, tweet in enumerate(scraper.get_items()):
-                        if i >= 10:  # Get top 10
-                            break
-                        
-                        tweet_id = str(tweet.id)
-                        
-                        # Skip if we've seen this tweet before
-                        if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
-                            continue
-                        
-                        tweet_data = {
-                            'id': tweet_id,
-                            'content': tweet.content[:280] if tweet.content else "",
-                            'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
-                            'media_url': None,
-                            'timestamp': tweet.date
-                        }
-                        
-                        # Check for media (photos/videos)
-                        if tweet.media:
-                            for media in tweet.media:
-                                if hasattr(media, 'downloadUrl'):
-                                    tweet_data['media_url'] = media.downloadUrl
-                                    break
-                        
-                        tweets.append(tweet_data)
-                    
-                    print(f"✅ Found {len(tweets)} new tweets")
-                    
-                    if tweets:
-                        self.save_last_tweet_id(tweets[0]["id"])
-                    
-                    return tweets
-                    
-                except Exception as e:
-                    retry_count += 1
-                    if retry_count < max_retries:
-                        wait_time = 2 ** retry_count  # Exponential backoff
-                        print(f"⚠️ Retry {retry_count}/{max_retries} - waiting {wait_time}s before retrying...")
-                        await asyncio.sleep(wait_time)
-                    else:
-                        raise e
-
-        except Exception as e:
-            print(f"❌ Error fetching tweets (giving up): {e}")
-            print(f"⏸️ Will retry on next check (in {POLL_INTERVAL_SECONDS}s)")
+        if not self.client:
+            print("❌ ZenRows client not initialized")
             return []
 
+        try:
+            url = f"https://twitter.com/{TWITTER_USERNAME}"
+            
+            print(f"🌐 Fetching {url} via ZenRows...")
+            response = self.client.get(url, params={
+                "js_render": "true",
+                "premium_proxy": "true"
+            })
+            
+            html = response.text
+            print(f"📄 Received {len(html)} bytes of HTML")
+            
+            tweets = self.parse_tweets_from_html(html)
+            print(f"✅ Parsed {len(tweets)} tweets from HTML")
+            
+            if tweets:
+                self.save_last_tweet_id(tweets[0]["id"])
+            
+            return tweets
+
+        except Exception as e:
+            print(f"❌ Error fetching tweets: {e}")
+            return []
+
+    def parse_tweets_from_html(self, html):
+        """Parse tweets from Twitter HTML - extract tweet data from JSON in script tags"""
+        tweets = []
+        
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Try to find tweet data in script tags (Twitter embeds JSON data)
+            script_tags = soup.find_all('script', {'type': 'application/json'})
+            print(f"🔍 Found {len(script_tags)} JSON script tags")
+            
+            for script in script_tags:
+                try:
+                    data = json.loads(script.string)
+                    # Extract tweets from nested structure
+                    if isinstance(data, dict):
+                        tweets.extend(self._extract_tweets_from_json(data))
+                except:
+                    pass
+            
+            # Fallback: Look for tweet containers by various selectors
+            if not tweets:
+                print("🔄 Using fallback HTML parsing...")
+                
+                # Find div elements that might contain tweets
+                for article in soup.find_all(['article', 'div']):
+                    # Look for status links
+                    link = article.find('a', href=re.compile(r'/\w+/status/\d+'))
+                    if not link:
+                        continue
+                    
+                    match = re.search(r'/status/(\d+)', link['href'])
+                    if not match:
+                        continue
+                    
+                    tweet_id = match.group(1)
+                    
+                    if self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id):
+                        continue
+                    
+                    # Extract text content
+                    text = article.get_text(strip=True)[:280]
+                    if not text or len(text) < 5:
+                        continue
+                    
+                    tweets.append({
+                        'id': tweet_id,
+                        'content': text,
+                        'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
+                        'media_url': None
+                    })
+            
+            return list(reversed(tweets))[:10]
+            
+        except Exception as e:
+            print(f"❌ Error parsing HTML: {e}")
+            return []
+    
+    def _extract_tweets_from_json(self, data, tweets=None):
+        """Recursively extract tweet objects from JSON structure"""
+        if tweets is None:
+            tweets = []
+        
+        if isinstance(data, dict):
+            # Check if this looks like a tweet object
+            if 'id_str' in data and 'text' in data:
+                tweet_id = str(data.get('id_str', ''))
+                text = data.get('text', '')
+                if tweet_id and text and not (self.last_tweet_id and int(tweet_id) <= int(self.last_tweet_id)):
+                    tweets.append({
+                        'id': tweet_id,
+                        'content': text[:280],
+                        'url': f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}",
+                        'media_url': None
+                    })
+            
+            for value in data.values():
+                self._extract_tweets_from_json(value, tweets)
+        
+        elif isinstance(data, list):
+            for item in data[:50]:  # Limit to prevent infinite recursion
+                self._extract_tweets_from_json(item, tweets)
+        
+        return tweets
 
     async def post_tweet_to_discord(self, tweet):
         try:
@@ -176,8 +230,8 @@ def validate_config():
         errors.append("DISCORD_BOT_TOKEN is required")
     if not DISCORD_CHANNEL_ID:
         errors.append("DISCORD_CHANNEL_ID is required")
-    if not TWITTER_USERNAME:
-        errors.append("TWITTER_USERNAME is required")
+    if not ZENROWS_API_KEY:
+        errors.append("ZENROWS_API_KEY is required")
     
     if errors:
         print("❌ Configuration errors:")
@@ -189,7 +243,7 @@ def validate_config():
 
 
 if __name__ == "__main__":
-    print("🚀 Starting Twitter to Discord bot (snscrape)...")
+    print("🚀 Starting Twitter to Discord bot (ZenRows)...")
     
     if not validate_config():
         exit(1)
