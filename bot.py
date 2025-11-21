@@ -53,10 +53,10 @@ def get_tweets(username):
         # Get tweets with media
         tweets_url = f'https://api.twitter.com/2/users/{user_id}/tweets'
         params = {
-            'max_results': 20,
+            'max_results': 5,
             'tweet.fields': 'created_at,public_metrics',
             'expansions': 'attachments.media_keys,author_id',
-            'media.fields': 'media_key,type,url,preview_image_url,variants'
+            'media.fields': 'media_key,type,url,preview_image_url,variants,public_metrics'
         }
         
         tweets_response = requests.get(tweets_url, headers=headers, params=params, timeout=10)
@@ -83,10 +83,20 @@ def get_tweets(username):
                     for media_key in tweet['attachments']['media_keys']:
                         if media_key in media_dict:
                             media = media_dict[media_key]
+                            video_url = None
+                            
+                            # Extract video URL from variants if available
+                            if media.get('type') in ['video', 'animated_gif'] and 'variants' in media:
+                                for variant in media['variants']:
+                                    if variant.get('content_type') == 'video/mp4':
+                                        video_url = variant.get('url')
+                                        break
+                            
                             media_list.append({
                                 'type': media.get('type'),
                                 'url': media.get('url'),
-                                'preview_image_url': media.get('preview_image_url')
+                                'preview_image_url': media.get('preview_image_url'),
+                                'video_url': video_url
                             })
                 
                 tweets.append({
@@ -150,19 +160,18 @@ async def tweet_checker():
                 for media in tweet['media']:
                     if media['type'] == 'photo' and media.get('url'):
                         embed.set_image(url=media['url'])
-                        break  # Only one image per embed
+                        break
                     elif media['type'] in ['video', 'animated_gif'] and media.get('preview_image_url'):
                         embed.set_image(url=media['preview_image_url'])
                         break
             
-            message = await channel.send(embed=embed)
+            await channel.send(embed=embed)
             
-            # Send videos/GIFs alone so Discord unfurls them with player
+            # Send videos/GIFs directly if available
             if tweet['media']:
-                has_video = any(m['type'] in ['video', 'animated_gif'] for m in tweet['media'])
-                if has_video:
-                    # Send just the tweet link - Discord will unfurl it with video player
-                    await channel.send(tweet['url'])
+                for media in tweet['media']:
+                    if media['type'] in ['video', 'animated_gif'] and media.get('video_url'):
+                        await channel.send(f"🎥 Video: {media['video_url']}")
             
             print(f"✅ Posted tweet {tweet['id']}")
             
