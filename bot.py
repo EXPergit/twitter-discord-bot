@@ -8,16 +8,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # TwiKit for Twitter scraping
-from twikit.guest import GuestClient
-from twikit import TooManyRequests
+from twikit import Client, TooManyRequests
 
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', 0))
 
-# State file
+# State files
 FOLLOWED_FILE = 'followed.json'
+COOKIES_FILE = 'cookies.json'
 
 def load_followed():
     """Load followed accounts"""
@@ -36,18 +36,41 @@ def save_followed(data):
 
 # Initialize Discord bot
 intents = discord.Intents.default()
-intents.message_content = True  # Required to read message content
+intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# TwiKit guest client
-guest_client = GuestClient()
+# TwiKit client
+client = Client('en-US')
 followed = load_followed()
+client_ready = False
 
 @bot.event
 async def on_ready():
+    global client_ready
     print(f'✅ Bot logged in as {bot.user}')
     print(f'📢 Target channel: {DISCORD_CHANNEL_ID}')
     print(f'📌 Followed accounts: {list(followed.keys())}')
+    
+    # Initialize TwiKit client
+    if not client_ready:
+        try:
+            # Try to load cookies if they exist
+            if Path(COOKIES_FILE).exists():
+                try:
+                    cookies = json.load(open(COOKIES_FILE))
+                    if cookies and isinstance(cookies, list) and len(cookies) > 0:
+                        print('🔄 Loading X.com cookies...')
+                        for cookie in cookies:
+                            client.cookies.set(cookie.get('name'), cookie.get('value'), 
+                                             domain=cookie.get('domain', '.x.com'))
+                        print('✅ Cookies loaded')
+                except Exception as e:
+                    print(f'⚠️ Could not load cookies: {e}')
+            
+            client_ready = True
+            print('✅ TwiKit client ready')
+        except Exception as e:
+            print(f'⚠️ TwiKit initialization: {e}')
     
     # Start the tweet checker
     if not check_tweets.is_running():
@@ -76,12 +99,27 @@ async def follow(ctx, username: str):
     try:
         await ctx.send(f'🔍 Fetching tweets from @{username}...')
         
-        # Verify user exists and get their tweets
-        user = await guest_client.get_user_by_screen_name(username)
+        # Try to get user with retries
+        max_retries = 2
+        user = None
+        for attempt in range(max_retries):
+            try:
+                user = await client.get_user_by_screen_name(username)
+                break
+            except TooManyRequests:
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(5)  # Wait 5 seconds before retry
+                else:
+                    raise
+        
+        if not user:
+            await ctx.send(f'❌ User @{username} not found')
+            return
+            
         print(f'✅ Fetched user @{username} (ID: {user.id})')
         
         # Get their recent tweets
-        tweets = await guest_client.get_user_tweets(user.id)
+        tweets = await client.get_user_tweets(user.id, count=20)
         
         if tweets:
             last_tweet_id = tweets[0].id if tweets else None
@@ -97,8 +135,12 @@ async def follow(ctx, username: str):
         else:
             await ctx.send(f'❌ No tweets found for @{username}')
     
+    except TooManyRequests:
+        await ctx.send('❌ Rate limited by X.com. Try again in a few minutes.')
+        print(f'⚠️ Rate limited while following @{username}')
     except Exception as e:
-        await ctx.send(f'❌ Error: {str(e)[:100]}')
+        error_msg = str(e)[:100]
+        await ctx.send(f'❌ Error: {error_msg}')
         print(f'❌ Error fetching @{username}: {e}')
 
 @bot.command()
@@ -147,7 +189,7 @@ async def check_tweets():
                 continue
             
             # Get recent tweets
-            tweets = await guest_client.get_user_tweets(user_id)
+            tweets = await client.get_user_tweets(user_id, count=20)
             
             if not tweets:
                 print(f'  ℹ️ No tweets found')
@@ -168,7 +210,7 @@ async def check_tweets():
                 try:
                     embed = discord.Embed(
                         title=f"New Tweet from @{username}",
-                        description=tweet.text[:2000],  # Discord limit
+                        description=tweet.text[:2000] if tweet.text else "No text",
                         url=f"https://x.com/{username}/status/{tweet.id}",
                         color=discord.Color.blue(),
                         timestamp=datetime.now()
@@ -182,7 +224,7 @@ async def check_tweets():
                 except Exception as e:
                     print(f'  ❌ Error posting tweet: {e}')
                 
-                await asyncio.sleep(0.5)  # Small delay between posts
+                await asyncio.sleep(0.5)
             
             # Update last tweet ID
             if new_tweets:
@@ -191,11 +233,11 @@ async def check_tweets():
                 print(f'  💾 Updated last tweet ID')
         
         except TooManyRequests:
-            print(f'⚠️ Rate limited for @{username}, will retry in 3 minutes')
+            print(f'⚠️ Rate limited for @{username}')
         except Exception as e:
             print(f'❌ Error checking @{username}: {e}')
         
-        await asyncio.sleep(1)  # Delay between accounts
+        await asyncio.sleep(1)
 
 @check_tweets.before_loop
 async def before_check_tweets():
