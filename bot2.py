@@ -156,19 +156,22 @@ async def tweet_checker():
             embed.set_footer(text="X.com")
             
             # Add media to embed
+            video_url = None
             if tweet['media']:
                 for media in tweet['media']:
                     if media['type'] == 'photo' and media.get('url'):
                         embed.set_image(url=media['url'])
                         break
                     elif media['type'] in ['video', 'animated_gif']:
-                        if media.get('preview_image_url'):
-                            embed.set_image(url=media['preview_image_url'])
                         if media.get('video_url'):
-                            embed.add_field(name="▶️ Video", value=f"[Play Video]({media['video_url']})", inline=False)
+                            video_url = media['video_url']
                         break
             
             await channel.send(embed=embed)
+            
+            # Send video as separate message so Discord renders playable player
+            if video_url:
+                await channel.send(video_url)
             
             print(f"✅ Posted tweet {tweet['id']}")
             
