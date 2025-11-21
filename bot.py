@@ -145,20 +145,24 @@ async def tweet_checker():
                 embed.add_field(name="🔄 Retweets", value=str(tweet['metrics'].get('retweet_count', 0)), inline=True)
             embed.set_footer(text="X.com")
             
-            # Add image if present
+            # Add image if present (for photos and video previews)
             if tweet['media']:
                 for media in tweet['media']:
                     if media['type'] == 'photo' and media.get('url'):
                         embed.set_image(url=media['url'])
                         break  # Only one image per embed
+                    elif media['type'] in ['video', 'animated_gif'] and media.get('preview_image_url'):
+                        embed.set_image(url=media['preview_image_url'])
+                        break
             
             message = await channel.send(embed=embed)
             
-            # Send videos separately as links
+            # Send videos/GIFs alone so Discord unfurls them with player
             if tweet['media']:
-                for media in tweet['media']:
-                    if media['type'] in ['video', 'animated_gif']:
-                        await channel.send(f"🎥 Video: {tweet['url']}")
+                has_video = any(m['type'] in ['video', 'animated_gif'] for m in tweet['media'])
+                if has_video:
+                    # Send just the tweet link - Discord will unfurl it with video player
+                    await channel.send(tweet['url'])
             
             print(f"✅ Posted tweet {tweet['id']}")
             
