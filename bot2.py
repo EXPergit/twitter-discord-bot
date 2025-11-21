@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import urlencode
 
 load_dotenv()
 

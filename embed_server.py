@@ -1,4 +1,5 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, request
+from urllib.parse import quote
 import os
 
 app = Flask(__name__)
@@ -9,16 +10,17 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta property="og:title" content="{{ title }}">
-    <meta property="og:description" content="{{ text }}">
-    <meta property="og:image" content="{{ image_url }}">
+    <meta property="og:description" content="{{ text[:100] }}">
+    {% if video_url %}
     <meta property="og:video" content="{{ video_url }}">
     <meta property="og:video:type" content="video/mp4">
     <meta property="og:video:width" content="1280">
     <meta property="og:video:height" content="720">
+    {% elif image_url %}
+    <meta property="og:image" content="{{ image_url }}">
+    {% endif %}
     <meta name="twitter:card" content="player">
-    <meta name="twitter:player" content="{{ video_url }}">
-    <meta name="twitter:player:width" content="1280">
-    <meta name="twitter:player:height" content="720">
+    <meta property="twitter:player" content="{{ request.url_root }}static/player.html?v={{ video_url }}">
     <title>{{ title }}</title>
     <style>
         body {
@@ -41,9 +43,6 @@ HTML_TEMPLATE = """
             align-items: center;
             margin-bottom: 12px;
         }
-        .header-info {
-            flex: 1;
-        }
         .name {
             font-weight: 700;
             font-size: 15px;
@@ -58,13 +57,13 @@ HTML_TEMPLATE = """
             margin: 12px 0;
             word-wrap: break-word;
         }
-        .video-container {
-            margin: 16px 0;
+        .media-container {
+            margin: 16px -16px 0 -16px;
             border-radius: 12px;
             overflow: hidden;
             background: #000;
         }
-        video {
+        video, img {
             width: 100%;
             height: auto;
             display: block;
@@ -82,33 +81,28 @@ HTML_TEMPLATE = """
             display: flex;
             gap: 4px;
         }
-        .footer {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid #38444d;
-            color: #657786;
-            font-size: 13px;
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <div class="header-info">
+            <div>
                 <div class="name">{{ name }}</div>
                 <div class="handle">@{{ handle }}</div>
             </div>
         </div>
         <div class="text">{{ text }}</div>
         {% if video_url %}
-        <div class="video-container">
-            <video controls width="600" height="auto">
+        <div class="media-container">
+            <video controls width="100%" style="background: #000;">
                 <source src="{{ video_url }}" type="video/mp4">
                 Your browser does not support the video tag.
             </video>
         </div>
         {% elif image_url %}
-        <img src="{{ image_url }}" style="width: 100%; border-radius: 12px; margin: 16px 0;">
+        <div class="media-container">
+            <img src="{{ image_url }}" />
+        </div>
         {% endif %}
         <div class="metrics">
             <div class="metric">💬 <strong>{{ replies }}</strong></div>
@@ -116,32 +110,38 @@ HTML_TEMPLATE = """
             <div class="metric">❤️ <strong>{{ likes }}</strong></div>
             <div class="metric">👁️ <strong>{{ views }}</strong></div>
         </div>
-        <div class="footer">Posted on X.com</div>
     </div>
 </body>
 </html>
 """
 
-@app.route('/tweet/<tweet_id>/<handle>/<int:likes>/<int:retweets>/<int:replies>/<int:views>/<path:text_and_media>')
-def tweet_embed(tweet_id, handle, likes, retweets, replies, views, text_and_media):
-    """Generate a fixtweet-style embed page"""
-    parts = text_and_media.rsplit('/', 2)
-    text = parts[0] if len(parts) > 1 else text_and_media
-    video_url = parts[1] if len(parts) > 2 and parts[1] else None
-    image_url = parts[2] if len(parts) > 2 and parts[2] else None
+@app.route('/')
+def tweet_embed():
+    """Generate a fixtweet-style embed page with query parameters"""
+    title = request.args.get('title', 'Tweet')
+    name = request.args.get('name', 'User')
+    handle = request.args.get('handle', 'user')
+    text = request.args.get('text', '')
+    video_url = request.args.get('video', None)
+    image_url = request.args.get('image', None)
+    likes = request.args.get('likes', 0)
+    retweets = request.args.get('retweets', 0)
+    replies = request.args.get('replies', 0)
+    views = request.args.get('views', 0)
     
     return render_template_string(
         HTML_TEMPLATE,
-        title=f"Tweet from @{handle}",
-        name=handle.upper(),
+        title=title,
+        name=name,
         handle=handle,
         text=text[:500],
-        video_url=video_url if video_url != "none" else None,
-        image_url=image_url if image_url != "none" else None,
+        video_url=video_url,
+        image_url=image_url,
         likes=likes,
         retweets=retweets,
         replies=replies,
-        views=views
+        views=views,
+        request=request
     )
 
 if __name__ == '__main__':

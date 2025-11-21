@@ -6,12 +6,16 @@ import json
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import urlencode
 
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', 0))
 TWITTER_BEARER_TOKEN = os.getenv('TWITTER_BEARER_TOKEN')
+EMBED_SERVER_URL = os.getenv('REPLIT_DOMAINS', '').split(',')[0].strip() if os.getenv('REPLIT_DOMAINS') else 'localhost:5000'
+if EMBED_SERVER_URL:
+    EMBED_SERVER_URL = f"https://{EMBED_SERVER_URL.strip()}" if "://" not in EMBED_SERVER_URL else EMBED_SERVER_URL
 
 # Intents
 intents = discord.Intents.default()
@@ -141,37 +145,37 @@ async def tweet_checker():
             continue
         
         try:
-            # Create embed with link
-            embed = discord.Embed(
-                title="Tweet from @NFL",
-                description=tweet['text'][:2000],
-                url=tweet['url'],
-                color=discord.Color.blue(),
-                timestamp=datetime.now()
-            )
-            embed.add_field(name="Link", value=tweet['url'], inline=False)
-            if tweet['metrics']:
-                embed.add_field(name="❤️ Likes", value=str(tweet['metrics'].get('like_count', 0)), inline=True)
-                embed.add_field(name="🔄 Retweets", value=str(tweet['metrics'].get('retweet_count', 0)), inline=True)
-            embed.set_footer(text="X.com")
-            
-            # Add media to embed
+            # Extract media
             video_url = None
+            image_url = None
             if tweet['media']:
                 for media in tweet['media']:
                     if media['type'] == 'photo' and media.get('url'):
-                        embed.set_image(url=media['url'])
+                        image_url = media['url']
                         break
                     elif media['type'] in ['video', 'animated_gif']:
                         if media.get('video_url'):
                             video_url = media['video_url']
                         break
             
-            await channel.send(embed=embed)
-            
-            # Send video as separate message so Discord renders playable player
+            # Generate embed server URL with tweet data
+            params = {
+                'title': f"Tweet from @NFL",
+                'name': 'NFL',
+                'handle': 'NFL',
+                'text': tweet['text'][:500],
+                'likes': tweet['metrics'].get('like_count', 0),
+                'retweets': tweet['metrics'].get('retweet_count', 0),
+                'replies': tweet['metrics'].get('reply_count', 0),
+                'views': tweet['metrics'].get('impression_count', 0)
+            }
             if video_url:
-                await channel.send(video_url)
+                params['video'] = video_url
+            if image_url:
+                params['image'] = image_url
+            
+            embed_url = f"{EMBED_SERVER_URL}/?{urlencode(params)}"
+            await channel.send(embed_url)
             
             print(f"✅ Posted tweet {tweet['id']}")
             
