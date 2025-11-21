@@ -26,22 +26,30 @@ def save_followed(data):
     json.dump(data, open(FOLLOWED_FILE, 'w'), indent=2)
 
 def scrape_tweets(username):
-    """Scrape tweets using snscrape"""
+    """Scrape tweets using Twitter API v2"""
     try:
+        # Pass environment variables to subprocess
+        env = os.environ.copy()
         result = subprocess.run(
             ['python', 'fetch_tweets.py', username],
             capture_output=True,
             text=True,
-            timeout=45
+            timeout=45,
+            env=env
         )
         if result.returncode == 0:
             try:
-                return json.loads(result.stdout)
+                tweets = json.loads(result.stdout)
+                if result.stderr:
+                    print(f'Debug: {result.stderr}')
+                return tweets
             except:
                 print(f'JSON parse error: {result.stdout}')
+                if result.stderr:
+                    print(f'Stderr: {result.stderr}')
                 return []
         else:
-            print(f'Scraper stderr: {result.stderr}')
+            print(f'Scraper error: {result.stderr}')
             return []
     except Exception as e:
         print(f'Scrape exception: {e}')
