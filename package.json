@@ -7,5 +7,7 @@
   "scripts": {
     "start": "python bot.py"
   },
-  "dependencies": {}
+  "dependencies": {
+    "puppeteer": "^24.31.0"
+  }
 }
