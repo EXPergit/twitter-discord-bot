@@ -122,6 +122,10 @@ async def on_ready():
     print(f'📢 Target channel: {DISCORD_CHANNEL_ID}')
     
     if not tweet_checker.is_running():
+        # Post top 2 tweets immediately
+        await tweet_checker()
+        print('📢 Posted initial tweets')
+        # Then start the loop
         tweet_checker.start()
         print('🔄 Tweet checker started')
 
