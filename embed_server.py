@@ -11,16 +11,9 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta property="og:title" content="{{ title }}">
     <meta property="og:description" content="{{ text[:100] }}">
-    {% if video_url %}
-    <meta property="og:video" content="{{ video_url }}">
-    <meta property="og:video:type" content="video/mp4">
-    <meta property="og:video:width" content="1280">
-    <meta property="og:video:height" content="720">
-    {% elif image_url %}
+    {% if image_url %}
     <meta property="og:image" content="{{ image_url }}">
     {% endif %}
-    <meta name="twitter:card" content="player">
-    <meta property="twitter:player" content="{{ request.url_root }}static/player.html?v={{ video_url }}">
     <title>{{ title }}</title>
     <style>
         body {
