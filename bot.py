@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from urllib.parse import quote
 from dotenv import load_dotenv
+import re
+
 
 
 load_dotenv()
@@ -248,6 +250,66 @@ async def tweet_loop():
         await send_tweet(t, ch, posted)
 
     save_posted(posted)
+
+TWEET_URL_REGEX = r"(?:twitter\.com|x\.com)/([^/]+)/status/(\d+)"
+
+@bot.command()
+async def tweet(ctx, url: str):
+    """Fetch a tweet manually and post it using your embed server."""
+    match = re.search(TWEET_URL_REGEX, url)
+    if not match:
+        return await ctx.send("❌ Invalid Twitter/X link.")
+
+    username = match.group(1)
+    tweet_id = match.group(2)
+
+    # Fetch tweets for that username (Fallback handles rate limits)
+    tweets = get_tweets(username)
+
+    if not tweets:
+        return await ctx.send("❌ Could not fetch tweets for user.")
+
+    # Look for the requested tweet
+    target = None
+    for t in tweets:
+        if t["id"] == tweet_id:
+            target = t
+            break
+
+    if not target:
+        return await ctx.send("❌ Tweet not found (maybe older than last 5).")
+
+    # --- Extract media ---
+    image_url = None
+    video_url = None
+
+    for m in target.get("media", []):
+        if m["type"] == "photo":
+            image_url = m["url"]
+        elif m["type"] in ["video", "gif", "animated_gif"]:
+            video_url = m.get("video_url")
+            image_url = m.get("preview_image_url", image_url)
+
+    # --- Build embed URL using your embed server ---
+    embed_url = (
+        f"{EMBED_SERVER_URL}"
+        f"?title=@{username}"
+        f"&name={username}"
+        f"&handle={username}"
+        f"&text={quote(target['text'])}"
+        f"&likes={target['metrics'].get('like_count', 0)}"
+        f"&retweets={target['metrics'].get('retweet_count', 0)}"
+        f"&replies={target['metrics'].get('reply_count', 0)}"
+        f"&views={target['metrics'].get('impression_count', 0)}"
+    )
+
+    if image_url:
+        embed_url += "&image=" + quote(image_url)
+    if video_url:
+        embed_url += "&video=" + quote(video_url)
+
+    # Send to Discord
+    await ctx.send(embed_url)
 
 
 
