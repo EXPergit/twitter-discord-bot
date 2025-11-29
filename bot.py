@@ -43,17 +43,27 @@ def get_tweets(username):
     try:
         headers = {'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}'}
         
-        # Get user ID
-        user_url = f'https://api.twitter.com/2/users/by/username/{username}'
-        user_response = requests.get(user_url, headers=headers, timeout=10)
-        
-        if user_response.status_code != 200:
-            print(f"❌ User lookup failed: {user_response.status_code}")
-            return []
+        # Get user ID with retries for rate limiting
+        max_retries = 3
+        for attempt in range(max_retries):
+            user_url = f'https://api.twitter.com/2/users/by/username/{username}'
+            user_response = requests.get(user_url, headers=headers, timeout=10)
+            
+            if user_response.status_code == 429:
+                wait_time = 2 ** attempt  # Exponential backoff
+                print(f"⏳ Rate limited. Waiting {wait_time}s before retry...")
+                import time
+                time.sleep(wait_time)
+                continue
+            
+            if user_response.status_code != 200:
+                print(f"❌ User lookup failed: {user_response.status_code}")
+                return []
+            break
         
         user_id = user_response.json()['data']['id']
         
-        # Get tweets with media
+        # Get tweets with media - with retries for rate limiting
         tweets_url = f'https://api.twitter.com/2/users/{user_id}/tweets'
         params = {
             'max_results': 2,
@@ -62,11 +72,20 @@ def get_tweets(username):
             'media.fields': 'media_key,type,url,preview_image_url,variants,public_metrics'
         }
         
-        tweets_response = requests.get(tweets_url, headers=headers, params=params, timeout=10)
-        
-        if tweets_response.status_code != 200:
-            print(f"❌ Tweets lookup failed: {tweets_response.status_code}")
-            return []
+        for attempt in range(max_retries):
+            tweets_response = requests.get(tweets_url, headers=headers, params=params, timeout=10)
+            
+            if tweets_response.status_code == 429:
+                wait_time = 2 ** attempt
+                print(f"⏳ Rate limited. Waiting {wait_time}s before retry...")
+                import time
+                time.sleep(wait_time)
+                continue
+            
+            if tweets_response.status_code != 200:
+                print(f"❌ Tweets lookup failed: {tweets_response.status_code}")
+                return []
+            break
         
         response_data = tweets_response.json()
         tweets = []
