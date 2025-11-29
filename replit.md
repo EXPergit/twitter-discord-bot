@@ -103,10 +103,13 @@ Run TWO independent Discord bots, each monitoring different Twitter accounts and
 
 ## ✨ Latest Updates - 2025-11-29
 
-✅ Instant tweet fetching on startup (with retry logic)  
+✅ Fixed infinite rate-limit retry loop  
+✅ Added max 12 retries with exponential backoff (5s → 10s → 20s → 40s... max 5min)  
+✅ Graceful exit after max retries (no more infinite looping)  
+✅ Instant tweet fetching on startup  
 ✅ FixTweet-style embed formatting  
 ✅ Videos embedded inside tweet cards  
-✅ Smart rate-limit handling  
+✅ Smart rate-limit handling within API calls (1s → 2s → 4s waits)  
 ✅ Top 2 tweets fetched instead of 5  
 ✅ Dual bot instance setup complete  
 ✅ Independent duplicate prevention  

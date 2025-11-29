@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import os
 import requests
 import json
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -40,18 +41,28 @@ def get_tweets(username):
     
     try:
         headers = {'Authorization': f'Bearer {TWITTER_BEARER_TOKEN}'}
+        max_retries = 3
         
-        # Get user ID
-        user_url = f'https://api.twitter.com/2/users/by/username/{username}'
-        user_response = requests.get(user_url, headers=headers, timeout=10)
-        
-        if user_response.status_code != 200:
-            print(f"❌ User lookup failed: {user_response.status_code}")
-            return []
+        # Get user ID with retries for rate limiting
+        for attempt in range(max_retries):
+            user_url = f'https://api.twitter.com/2/users/by/username/{username}'
+            user_response = requests.get(user_url, headers=headers, timeout=10)
+            
+            if user_response.status_code == 429:
+                import time
+                wait = 2 ** attempt
+                print(f"⏳ Rate limited (user lookup). Waiting {wait}s…")
+                time.sleep(wait)
+                continue
+            
+            if user_response.status_code != 200:
+                print(f"❌ User lookup failed: {user_response.status_code}")
+                return []
+            break
         
         user_id = user_response.json()['data']['id']
         
-        # Get tweets with media
+        # Get tweets with media - with retries for rate limiting
         tweets_url = f'https://api.twitter.com/2/users/{user_id}/tweets'
         params = {
             'max_results': 5,
@@ -60,11 +71,20 @@ def get_tweets(username):
             'media.fields': 'media_key,type,url,preview_image_url,variants,public_metrics'
         }
         
-        tweets_response = requests.get(tweets_url, headers=headers, params=params, timeout=10)
-        
-        if tweets_response.status_code != 200:
-            print(f"❌ Tweets lookup failed: {tweets_response.status_code}")
-            return []
+        for attempt in range(max_retries):
+            tweets_response = requests.get(tweets_url, headers=headers, params=params, timeout=10)
+            
+            if tweets_response.status_code == 429:
+                import time
+                wait = 2 ** attempt
+                print(f"⏳ Rate limited (tweets fetch). Waiting {wait}s…")
+                time.sleep(wait)
+                continue
+            
+            if tweets_response.status_code != 200:
+                print(f"❌ Tweets lookup failed: {tweets_response.status_code}")
+                return []
+            break
         
         response_data = tweets_response.json()
         tweets = []
@@ -114,10 +134,60 @@ def get_tweets(username):
         print(f"❌ Error fetching tweets: {e}")
         return []
 
+async def fetch_startup_tweets():
+    """Fetch tweets on startup with exponential backoff (max 12 retries)."""
+    channel = bot.get_channel(DISCORD_CHANNEL_ID)
+    if not channel:
+        print("❌ No channel found.")
+        return
+
+    print("📌 Fetching top 2 tweets…")
+
+    max_retries = 12
+    for attempt in range(max_retries):
+        tweets = get_tweets('arkdesignss')
+
+        if tweets:
+            print("✅ Startup tweets fetched.")
+            posted = load_posted_tweets()
+            for t in tweets[:2]:
+                try:
+                    embed = discord.Embed(title=t['text'][:200], description=f"[View Tweet]({t['url']})", color=0x1F51BA)
+                    embed.set_author(name='@arkdesignss', url=t['url'])
+                    
+                    m = t['metrics']
+                    metrics_text = f"💬 {m.get('reply_count', 0)}   🔄 {m.get('retweet_count', 0)}   ❤️ {m.get('like_count', 0)}   👁️ {m.get('impression_count', 0)}"
+                    embed.add_field(name=metrics_text, value="", inline=False)
+                    
+                    if t['media']:
+                        for media in t['media']:
+                            if media['type'] == 'photo':
+                                embed.set_image(url=media.get('url'))
+                            elif media['type'] in ['video', 'animated_gif']:
+                                embed.set_image(url=media.get('preview_image_url'))
+                    
+                    embed.set_footer(text='X.com')
+                    await channel.send(embed=embed, content=t['url'])
+                    posted[t['id']] = True
+                except Exception as e:
+                    print(f"❌ Error posting: {e}")
+            
+            save_posted_tweets(posted)
+            return
+
+        if attempt < max_retries - 1:
+            wait = min(5 * (2 ** attempt), 300)  # Exponential backoff, max 5min
+            print(f"⏳ Rate limited. Retry {attempt + 1}/{max_retries} in {wait}s…")
+            await asyncio.sleep(wait)
+    
+    print("❌ Failed to fetch tweets after max retries. Giving up for now.")
+
 @bot.event
 async def on_ready():
     print(f'✅ Bot logged in as {bot.user}')
     print(f'📢 Target channel: {DISCORD_CHANNEL_ID}')
+    
+    await fetch_startup_tweets()
     
     if not tweet_checker.is_running():
         tweet_checker.start()

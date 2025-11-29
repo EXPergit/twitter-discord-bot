@@ -9,12 +9,25 @@ HTML_TEMPLATE = """
 <html>
 <head>
     <meta charset="UTF-8">
+
+    <!-- TITLE + DESCRIPTION -->
     <meta property="og:title" content="{{ title }}">
-    <meta property="og:description" content="{{ text[:100] }}">
+    <meta property="og:description" content="{{ text[:200] }}">
+
+    <!-- IMAGE PREVIEW -->
     {% if image_url %}
     <meta property="og:image" content="{{ image_url }}">
     {% endif %}
+
+    <!-- VIDEO PREVIEW -->
+    {% if video_url %}
+    <meta property="og:video" content="{{ video_url }}">
+    <meta property="og:type" content="video.other">
+    <meta property="twitter:player" content="{{ video_url }}">
+    {% endif %}
+
     <title>{{ title }}</title>
+
     <style>
         body {
             background: #0f1419;
@@ -31,27 +44,21 @@ HTML_TEMPLATE = """
             padding: 16px;
             border: 1px solid #38444d;
         }
-        .header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 12px;
-        }
         .name {
             font-weight: 700;
-            font-size: 15px;
+            font-size: 16px;
         }
         .handle {
-            color: #657786;
-            font-size: 15px;
+            color: #8899a6;
+            font-size: 14px;
         }
         .text {
             font-size: 20px;
-            line-height: 1.3;
+            line-height: 1.35;
             margin: 12px 0;
-            word-wrap: break-word;
         }
         .media-container {
-            margin: 16px -16px 0 -16px;
+            margin-top: 16px;
             border-radius: 12px;
             overflow: hidden;
             background: #000;
@@ -64,39 +71,45 @@ HTML_TEMPLATE = """
         .metrics {
             display: flex;
             gap: 16px;
-            margin-top: 12px;
-            padding-top: 12px;
+            margin-top: 14px;
+            padding-top: 14px;
             border-top: 1px solid #38444d;
-            color: #657786;
-            font-size: 13px;
+            color: #8899a6;
+            font-size: 14px;
         }
         .metric {
             display: flex;
-            gap: 4px;
+            gap: 6px;
+            align-items: center;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
-        <div class="header">
-            <div>
-                <div class="name">{{ name }}</div>
-                <div class="handle">@{{ handle }}</div>
-            </div>
-        </div>
+        <!-- HEADER -->
+        <div class="name">{{ name }}</div>
+        <div class="handle">@{{ handle }}</div>
+
+        <!-- TEXT -->
         <div class="text">{{ text }}</div>
+
+        <!-- VIDEO -->
         {% if video_url %}
         <div class="media-container">
-            <video controls width="100%" style="background: #000;">
+            <video controls playsinline preload="none">
                 <source src="{{ video_url }}" type="video/mp4">
-                Your browser does not support the video tag.
+                Video unsupported.
             </video>
         </div>
         {% elif image_url %}
+        <!-- IMAGE -->
         <div class="media-container">
-            <img src="{{ image_url }}" />
+            <img src="{{ image_url }}">
         </div>
         {% endif %}
+
+        <!-- METRICS -->
         <div class="metrics">
             <div class="metric">💬 <strong>{{ replies }}</strong></div>
             <div class="metric">🔄 <strong>{{ retweets }}</strong></div>
@@ -108,20 +121,27 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/')
+
+@app.route("/")
 def tweet_embed():
-    """Generate a fixtweet-style embed page with query parameters"""
-    title = request.args.get('title', 'Tweet')
-    name = request.args.get('name', 'User')
-    handle = request.args.get('handle', 'user')
-    text = request.args.get('text', '')
-    video_url = request.args.get('video', None)
-    image_url = request.args.get('image', None)
-    likes = request.args.get('likes', 0)
-    retweets = request.args.get('retweets', 0)
-    replies = request.args.get('replies', 0)
-    views = request.args.get('views', 0)
-    
+    """
+    Generate a FixTweet-style embed from URL query parameters.
+    Discord unfurls this URL to show video/image inline.
+    """
+
+    title = request.args.get("title", "Tweet")
+    name = request.args.get("name", "User")
+    handle = request.args.get("handle", "user")
+    text = request.args.get("text", "")
+
+    video_url = request.args.get("video", None)
+    image_url = request.args.get("image", None)
+
+    likes = request.args.get("likes", 0)
+    retweets = request.args.get("retweets", 0)
+    replies = request.args.get("replies", 0)
+    views = request.args.get("views", 0)
+
     return render_template_string(
         HTML_TEMPLATE,
         title=title,
@@ -133,9 +153,9 @@ def tweet_embed():
         likes=likes,
         retweets=retweets,
         replies=replies,
-        views=views,
-        request=request
+        views=views
     )
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=False)
