@@ -215,15 +215,15 @@ async def post_one_tweet(tweet, channel, posted, force=False):
 
 
 async def fetch_startup_tweets():
-    """Fetch tweets on startup with exponential backoff (max 12 retries)."""
+    """Fetch tweets on startup - tries immediately without delays."""
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
     if not channel:
         print("❌ No channel found.")
         return
 
-    print("📌 Fetching top 2 tweets…")
+    print("📌 Fetching top 2 tweets instantly…")
 
-    max_retries = 12
+    max_retries = 5
     for attempt in range(max_retries):
         tweets = get_tweets("NFL")
 
@@ -234,13 +234,8 @@ async def fetch_startup_tweets():
                 await post_one_tweet(t, channel, posted, force=True)
             save_posted_tweets(posted)
             return
-
-        if attempt < max_retries - 1:
-            wait = min(5 * (2 ** attempt), 300)  # Exponential backoff, max 5min
-            print(f"⏳ Rate limited. Retry {attempt + 1}/{max_retries} in {wait}s…")
-            await asyncio.sleep(wait)
     
-    print("❌ Failed to fetch tweets after max retries. Giving up for now.")
+    print("ℹ️ Tweets unavailable on startup. Will try again in 1 minute.")
 
 
 # ------------------ Discord Events ------------------
@@ -257,7 +252,7 @@ async def on_ready():
         print("🔄 Tweet checker started")
 
 
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=1)
 async def tweet_checker():
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
     if not channel:
