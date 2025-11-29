@@ -17,7 +17,7 @@ DISCORD_CHANNEL_ID = int(os.getenv('DISCORD_CHANNEL_ID', 0))
 TWITTER_BEARER_TOKEN = os.getenv('TWITTER_BEARER_TOKEN')
 
 # Embed server URL
-EMBED_SERVER_URL = os.getenv('REPLIT_DOMAINS', '').split(',')[0].strip() if os.getenv('REPLIT_DOMAINS') else 'localhost:5000'
+EMBED_SERVER_URL = "https://ridiculous-cindra-oknonononon-1d15a38f.koyeb.app"
 if EMBED_SERVER_URL:
     EMBED_SERVER_URL = f"https://{EMBED_SERVER_URL.strip()}" if "://" not in EMBED_SERVER_URL else EMBED_SERVER_URL
 
@@ -216,13 +216,23 @@ async def post_one_tweet(tweet, channel, posted, force=False):
 
     # Build embed server link
     embed_url = (
-        f"{EMBED_SERVER_URL}"
-        f"?title=@NFL&name=NFL&handle=NFL"
-        f"&text={quote(tweet['text'])}"
-        f"&likes={tweet['metrics'].get('likes', 0)}"
-        f"&retweets={tweet['metrics'].get('retweets', 0)}"
-        f"&replies={tweet['metrics'].get('replies', 0)}"
-        f"&views={tweet['metrics'].get('views', 0)}"
+    f"{EMBED_SERVER_URL}"
+    f"?title=@NFL"
+    f"&name=NFL"
+    f"&handle=NFL"
+    f"&text={quote(tweet['text'])}"
+    f"&likes={tweet['metrics'].get('like_count', 0)}"
+    f"&retweets={tweet['metrics'].get('retweet_count', 0)}"
+    f"&replies={tweet['metrics'].get('reply_count', 0)}"
+    f"&views={tweet['metrics'].get('impression_count', 0)}"
+)
+
+if image_url:
+    embed_url += f"&image={quote(image_url)}"
+
+if video_url:
+    embed_url += f"&video={quote(video_url)}"
+views={tweet['metrics'].get('views', 0)}"
     )
 
     if image_url:
@@ -238,7 +248,7 @@ async def post_one_tweet(tweet, channel, posted, force=False):
 
     embed.set_footer(text="X.com")
 
-    await channel.send(content=embed_url, embed=embed)
+    await channel.send(embed_url)
 
     posted[tweet["id"]] = True
     print(f"✅ Posted tweet {tweet['id']}")
