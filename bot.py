@@ -113,7 +113,7 @@ def convert_tweets(data, username):
 
             media_list.append({
                 "type": m.get("type"),
-                "url": m["url"],
+                "url": m.get("url"),
                 "preview_image_url": m.get("preview_image_url"),
                 "video_url": video_url
             })
@@ -174,6 +174,7 @@ def get_tweets(username):
 # ============================================================
 
 async def send_tweet(tweet, channel, posted, force=False):
+    # FIX: force=True ALWAYS posts even if ID exists
     if not force and tweet["id"] in posted:
         return
 
@@ -188,7 +189,7 @@ async def send_tweet(tweet, channel, posted, force=False):
             video_url = m["video_url"]
             image_url = m.get("preview_image_url")
 
-    # Build simple embed (no video here)
+    # Build simple embed
     embed = discord.Embed(
         description=tweet["text"],
         color=0x1DA1F2
@@ -211,7 +212,7 @@ async def send_tweet(tweet, channel, posted, force=False):
 
     await channel.send(embed=embed)
 
-    # SEND VIDEO BELOW (auto-post)
+    # SEND VIDEO BELOW FOR AUTO POSTER
     if video_url:
         proxied = CDN_PROXY + quote(video_url, safe='')
         await channel.send(proxied)
@@ -221,28 +222,42 @@ async def send_tweet(tweet, channel, posted, force=False):
 
 
 # ============================================================
-# BOT EVENTS
+# FIXED STARTUP: ALWAYS POST TOP 2 ON RESTART
 # ============================================================
 
 async def startup():
+    await bot.wait_until_ready()  # important fix
+
     ch = bot.get_channel(DISCORD_CHANNEL_ID)
     if not ch:
-        print("No channel")
+        print("❌ Channel not found")
         return
 
+    print("🔄 Bot restarted — posting top 2 tweets...")
+
     tweets = get_tweets("NFL")
+    if not tweets:
+        print("❌ No tweets found.")
+        return
+
     posted = load_posted()
 
+    # ALWAYS POST TOP 2
     for t in tweets[:2]:
         await send_tweet(t, ch, posted, force=True)
 
     save_posted(posted)
+    print("✔ Posted top 2 tweets")
 
+
+# ============================================================
+# BOT EVENTS
+# ============================================================
 
 @bot.event
 async def on_ready():
     print("Logged in as:", bot.user)
-    await startup()
+    bot.loop.create_task(startup())  # non-blocking
     tweet_loop.start()
 
 
@@ -297,7 +312,7 @@ async def tweet(ctx, url: str):
             video_url = m.get("video_url")
             image_url = m.get("preview_image_url", image_url)
 
-    # BUILD EMBED PAGE URL (FixTweet style)
+    # FIXTWEET STYLE EMBED PAGE
     embed_url = (
         f"{EMBED_SERVER_URL}"
         f"?title=@{username}"
@@ -310,16 +325,15 @@ async def tweet(ctx, url: str):
         f"&views={target['metrics'].get('impression_count', 0)}"
     )
 
-    # embed image
     if image_url:
         embed_url += "&image=" + quote(image_url)
 
-    # embed VIDEO INSIDE THE PAGE — USE CDN PROXY
+    # VIDEO INSIDE CARD → USE PROXY
     if video_url:
         proxied_for_embed = CDN_PROXY + quote(video_url, safe='')
         embed_url += "&video=" + quote(proxied_for_embed)
 
-    # SEND ONE MESSAGE ONLY → DISCORD UNFURLS VIDEO INSIDE
+    # DISCORD WILL UNFURL VIDEO INSIDE
     await ctx.send(embed_url)
 
 
