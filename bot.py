@@ -209,8 +209,8 @@ async def send_tweet(tweet, channel, posted, force=False):
 
     if video_url:
     # use your CDN proxy instead of direct mp4
-    proxied = f"https://cdn.ahazek.org/video?url={quote(video_url, safe='')}"
-    await channel.send(proxied)
+       proxied = f"https://cdn.ahazek.org/video?url={quote(video_url, safe='')}"
+       await channel.send(proxied)
 
 
     posted[tweet["id"]] = True
