@@ -262,8 +262,11 @@ async def tweet(ctx, url: str):
     username = match.group(1)
     tweet_id = match.group(2)
 
+    # fetch tweets
     tweets = get_tweets(username)
-    target = next((t for t in tweets if t["id"] == tweet_id), None)
+
+    # FIXED ID MATCHING — ALWAYS STRING COMPARE
+    target = next((t for t in tweets if str(t["id"]) == str(tweet_id)), None)
 
     if not target:
         return await ctx.send("❌ Tweet not found.")
@@ -276,10 +279,11 @@ async def tweet(ctx, url: str):
             image_url = m["url"]
         elif m["type"] in ["video", "animated_gif", "gif"]:
             raw = m.get("video_url")
-            video_url = CDN_PROXY + quote(raw, safe="")
+            if raw:
+                video_url = CDN_PROXY + quote(raw, safe="")
             image_url = m.get("preview_image_url", image_url)
 
-    # Build embed server URL
+    # Build embed URL
     embed_url = (
         f"{EMBED_SERVER_URL}"
         f"?title=@{username}"
@@ -298,10 +302,10 @@ async def tweet(ctx, url: str):
     if video_url:
         embed_url += "&video=" + quote(video_url)
 
-    print("EMBED_URL:", embed_url)  # DEBUG LINE
+    print("EMBED_URL:", embed_url)
 
-    # SEND FIXTWEET STYLE LINK
     await ctx.send(embed_url)
+
 
 
 bot.run(DISCORD_TOKEN)
