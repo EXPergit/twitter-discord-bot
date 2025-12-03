@@ -18,7 +18,7 @@ TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 EMBED_SERVER_URL = "https://ridiculous-cindra-oknonononon-1d15a38f.koyeb.app/"
 
 # YOUR CDN PROXY
-CDN_PROXY = "https://media.ahazek.org/get?url="
+CDN_PROXY = "https://cdn.ahazek.org/get?url="
 
 intents = discord.Intents.default()
 intents.message_content = True
