@@ -14,10 +14,8 @@ DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID", 0))
 TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 
-# YOUR EMBED SERVER
+# FIXTWEET ARCHITECTURE
 EMBED_SERVER_URL = "https://ridiculous-cindra-oknonononon-1d15a38f.koyeb.app/"
-
-# YOUR CDN PROXY
 CDN_PROXY = "https://cdn.ahazek.org/get?url="
 
 intents = discord.Intents.default()
@@ -28,7 +26,7 @@ POSTED_TWEETS_FILE = "posted_tweets.json"
 
 
 # ============================================================
-# LOAD / SAVE
+# HELPERS
 # ============================================================
 
 def load_posted():
@@ -44,52 +42,49 @@ def save_posted(data):
 
 
 # ============================================================
-# VXTwitter fallback
+# VX Fallback
 # ============================================================
 
 def get_vx(username):
     try:
         r = requests.get(f"https://api.vxtwitter.com/user/{username}", timeout=10)
         if r.status_code != 200:
-            print("VX error", r.status_code)
             return []
 
         data = r.json()
         tweets = []
 
         for t in data.get("tweets", [])[:5]:
-            media_list = []
-            if t.get("media"):
-                for m in t["media"]:
-                    media_list.append({
-                        "type": m.get("type"),
-                        "url": m.get("url"),
-                        "preview_image_url": m.get("thumbnail_url"),
-                        "video_url": m.get("url") if m.get("type") in ["video", "gif"] else None
-                    })
+            media = []
+            for m in t.get("media", []):
+                media.append({
+                    "type": m.get("type"),
+                    "url": m.get("url"),
+                    "preview_image_url": m.get("thumbnail_url"),
+                    "video_url": m.get("url") if m.get("type") in ["video", "gif"] else None
+                })
 
             tweets.append({
                 "id": str(t["id"]),
                 "text": t["text"],
                 "url": t["url"],
                 "metrics": t.get("stats", {}),
-                "media": media_list
+                "media": media
             })
 
-        print("Using VX fallback")
         return tweets
 
-    except Exception as e:
-        print("VX crash:", e)
+    except:
         return []
 
 
 # ============================================================
-# TWITTER API (if available)
+# TWITTER API
 # ============================================================
 
 def convert_tweets(data, username):
     media_map = {}
+
     if "includes" in data and "media" in data["includes"]:
         for m in data["includes"]["media"]:
             media_map[m["media_key"]] = m
@@ -97,8 +92,7 @@ def convert_tweets(data, username):
     tweets = []
 
     for t in data.get("data", []):
-        media_list = []
-
+        media = []
         for key in t.get("attachments", {}).get("media_keys", []):
             m = media_map.get(key)
             if not m:
@@ -111,7 +105,7 @@ def convert_tweets(data, username):
                         video_url = v["url"]
                         break
 
-            media_list.append({
+            media.append({
                 "type": m.get("type"),
                 "url": m.get("url"),
                 "preview_image_url": m.get("preview_image_url"),
@@ -123,7 +117,7 @@ def convert_tweets(data, username):
             "text": t["text"],
             "url": f"https://x.com/{username}/status/{t['id']}",
             "metrics": t.get("public_metrics", {}),
-            "media": media_list
+            "media": media
         })
 
     return tweets
@@ -136,10 +130,9 @@ def get_tweets(username):
     try:
         headers = {"Authorization": f"Bearer {TWITTER_BEARER_TOKEN}"}
 
-        # user lookup
         u = requests.get(
             f"https://api.twitter.com/2/users/by/username/{username}",
-            headers=headers, timeout=10
+            headers=headers
         )
 
         if u.status_code != 200:
@@ -147,17 +140,16 @@ def get_tweets(username):
 
         user_id = u.json()["data"]["id"]
 
-        # fetch tweets
         params = {
             "max_results": 5,
-            "tweet.fields": "public_metrics,created_at",
+            "tweet.fields": "public_metrics",
             "expansions": "attachments.media_keys",
             "media.fields": "media_key,type,url,preview_image_url,variants"
         }
 
         t = requests.get(
             f"https://api.twitter.com/2/users/{user_id}/tweets",
-            headers=headers, params=params, timeout=10
+            headers=headers, params=params
         )
 
         if t.status_code != 200:
@@ -170,31 +162,25 @@ def get_tweets(username):
 
 
 # ============================================================
-# SEND EMBED (AUTO POST)
+# AUTO POST TWEET
 # ============================================================
 
 async def send_tweet(tweet, channel, posted, force=False):
-    # FIX: force=True ALWAYS posts even if ID exists
     if not force and tweet["id"] in posted:
         return
 
-    media = tweet.get("media", [])
     image_url = None
     video_url = None
 
-    for m in media:
+    for m in tweet.get("media", []):
         if m["type"] == "photo":
             image_url = m["url"]
-        elif m["type"] in ["video", "animated_gif"]:
+        elif m["type"] in ["video", "animated_gif", "gif"]:
             video_url = m["video_url"]
-            image_url = m.get("preview_image_url")
+            image_url = m.get("preview_image_url", image_url)
 
-    # Build simple embed
-    embed = discord.Embed(
-        description=tweet["text"],
-        color=0x1DA1F2
-    )
-
+    # BASIC embed for auto mode
+    embed = discord.Embed(description=tweet["text"], color=0x1DA1F2)
     embed.set_author(
         name="NFL (@NFL)",
         url=tweet["url"],
@@ -202,62 +188,50 @@ async def send_tweet(tweet, channel, posted, force=False):
     )
 
     stats = tweet["metrics"]
-    embed.add_field(name="💬", value=stats.get("reply_count", 0), inline=True)
-    embed.add_field(name="🔁", value=stats.get("retweet_count", 0), inline=True)
-    embed.add_field(name="❤️", value=stats.get("like_count", 0), inline=True)
-    embed.add_field(name="👁", value=stats.get("impression_count", 0), inline=True)
+    embed.add_field(name="💬", value=stats.get("reply_count", 0))
+    embed.add_field(name="🔁", value=stats.get("retweet_count", 0))
+    embed.add_field(name="❤️", value=stats.get("like_count", 0))
+    embed.add_field(name="👁", value=stats.get("impression_count", 0))
 
     if image_url:
         embed.set_image(url=image_url)
 
     await channel.send(embed=embed)
 
-    # SEND VIDEO BELOW FOR AUTO POSTER
+    # ONLY auto poster sends separate video link
     if video_url:
-        proxied = CDN_PROXY + quote(video_url, safe='')
+        proxied = CDN_PROXY + quote(video_url, safe="")
         await channel.send(proxied)
 
     posted[tweet["id"]] = True
-    print("Posted", tweet["id"])
+    save_posted(posted)
 
 
 # ============================================================
-# FIXED STARTUP: ALWAYS POST TOP 2 ON RESTART
+# STARTUP
 # ============================================================
 
 async def startup():
-    await bot.wait_until_ready()  # important fix
+    await bot.wait_until_ready()
 
     ch = bot.get_channel(DISCORD_CHANNEL_ID)
     if not ch:
-        print("❌ Channel not found")
+        print("Channel not found")
         return
-
-    print("🔄 Bot restarted — posting top 2 tweets...")
 
     tweets = get_tweets("NFL")
-    if not tweets:
-        print("❌ No tweets found.")
-        return
-
     posted = load_posted()
 
-    # ALWAYS POST TOP 2
     for t in tweets[:2]:
         await send_tweet(t, ch, posted, force=True)
 
     save_posted(posted)
-    print("✔ Posted top 2 tweets")
 
-
-# ============================================================
-# BOT EVENTS
-# ============================================================
 
 @bot.event
 async def on_ready():
     print("Logged in as:", bot.user)
-    bot.loop.create_task(startup())  # non-blocking
+    bot.loop.create_task(startup())
     tweet_loop.start()
 
 
@@ -274,7 +248,7 @@ async def tweet_loop():
 
 
 # ============================================================
-# !tweet COMMAND — FIXTWEET STYLE EMBED + VIDEO INSIDE
+# !tweet FULL FIXTWEET EMBED
 # ============================================================
 
 TWEET_URL_REGEX = r"(?:twitter\.com|x\.com)/([^/]+)/status/(\d+)"
@@ -289,14 +263,7 @@ async def tweet(ctx, url: str):
     tweet_id = match.group(2)
 
     tweets = get_tweets(username)
-    if not tweets:
-        return await ctx.send("❌ Could not fetch tweets for user.")
-
-    target = None
-    for t in tweets:
-        if t["id"] == tweet_id:
-            target = t
-            break
+    target = next((t for t in tweets if t["id"] == tweet_id), None)
 
     if not target:
         return await ctx.send("❌ Tweet not found.")
@@ -308,13 +275,11 @@ async def tweet(ctx, url: str):
         if m["type"] == "photo":
             image_url = m["url"]
         elif m["type"] in ["video", "animated_gif", "gif"]:
-            original_video = m.get("video_url")
-            # Convert to proxy-generated MP4
-            video_url = CDN_PROXY + quote(original_video, safe="")
-            # keep preview for thumbnail
+            raw = m.get("video_url")
+            video_url = CDN_PROXY + quote(raw, safe="")
             image_url = m.get("preview_image_url", image_url)
 
-    # Build embed URL
+    # Build embed server URL
     embed_url = (
         f"{EMBED_SERVER_URL}"
         f"?title=@{username}"
@@ -333,12 +298,10 @@ async def tweet(ctx, url: str):
     if video_url:
         embed_url += "&video=" + quote(video_url)
 
-    print("EMBED_URL:", embed_url)
+    print("EMBED_URL:", embed_url)  # DEBUG LINE
 
-
-    # SEND ONLY THE EMBED URL
+    # SEND FIXTWEET STYLE LINK
     await ctx.send(embed_url)
-
 
 
 bot.run(DISCORD_TOKEN)
