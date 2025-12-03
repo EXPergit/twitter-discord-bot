@@ -281,7 +281,6 @@ TWEET_URL_REGEX = r"(?:twitter\.com|x\.com)/([^/]+)/status/(\d+)"
 
 @bot.command()
 async def tweet(ctx, url: str):
-    """Fetch a tweet manually and post it using your embed server."""
     match = re.search(TWEET_URL_REGEX, url)
     if not match:
         return await ctx.send("❌ Invalid Twitter/X link.")
@@ -308,11 +307,14 @@ async def tweet(ctx, url: str):
     for m in target.get("media", []):
         if m["type"] == "photo":
             image_url = m["url"]
-        elif m["type"] in ["video", "gif", "animated_gif"]:
-            video_url = m.get("video_url")
+        elif m["type"] in ["video", "animated_gif", "gif"]:
+            original_video = m.get("video_url")
+            # Convert to proxy-generated MP4
+            video_url = CDN_PROXY + quote(original_video, safe="")
+            # keep preview for thumbnail
             image_url = m.get("preview_image_url", image_url)
 
-    # FIXTWEET STYLE EMBED PAGE
+    # Build embed URL
     embed_url = (
         f"{EMBED_SERVER_URL}"
         f"?title=@{username}"
@@ -328,13 +330,12 @@ async def tweet(ctx, url: str):
     if image_url:
         embed_url += "&image=" + quote(image_url)
 
-    # VIDEO INSIDE CARD → USE PROXY
     if video_url:
-        proxied_for_embed = CDN_PROXY + quote(video_url, safe='')
-        embed_url += "&video=" + quote(proxied_for_embed)
+        embed_url += "&video=" + quote(video_url)
 
-    # DISCORD WILL UNFURL VIDEO INSIDE
+    # SEND ONLY THE EMBED URL
     await ctx.send(embed_url)
+
 
 
 bot.run(DISCORD_TOKEN)
