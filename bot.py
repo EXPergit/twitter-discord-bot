@@ -9,8 +9,12 @@ from dotenv import load_dotenv
 import re
 
 load_dotenv()
-print("TWITTER_BEARER_TOKEN (raw):", os.getenv("TWITTER_BEARER_TOKEN"))
-print("LENGTH:", len(os.getenv("TWITTER_BEARER_TOKEN") or ""))
+
+print("====================================")
+print("DEBUG ENV CHECK")
+print("TWITTER_BEARER_TOKEN:", os.getenv("TWITTER_BEARER_TOKEN"))
+print("TOKEN LENGTH:", len(os.getenv("TWITTER_BEARER_TOKEN") or ""))
+print("====================================")
 
 
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
