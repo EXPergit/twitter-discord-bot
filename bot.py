@@ -57,20 +57,41 @@ async def tweet_loop():
     try:
         print("🔍 Checking for new NFL tweets...")
         
-        # Fetch latest tweets from NFL account
+        # Fetch latest tweets from NFL account - try multiple endpoints
         url = "https://api.fxtwitter.com/NFL"
         response = requests.get(url, timeout=10)
         
         if response.status_code != 200:
             print(f"❌ FxTwitter API error: {response.status_code}")
+            print(f"Response: {response.text[:200]}")
             return
         
         data = response.json()
+        print(f"📊 API Response keys: {data.keys()}")
+        
+        # Try different response structures
         tweets = data.get("tweets", [])
+        if not tweets and "tweet" in data:
+            tweets = [data["tweet"]]  # Single tweet response
         
         if not tweets:
-            print("⚠️ No tweets found")
-            return
+            print("⚠️ No tweets found in response")
+            print(f"Full response: {data}")
+            
+            # Try alternative: fetch user timeline
+            alt_url = "https://api.fxtwitter.com/user/NFL"
+            print(f"🔄 Trying alternative endpoint: {alt_url}")
+            alt_response = requests.get(alt_url, timeout=10)
+            
+            if alt_response.status_code == 200:
+                alt_data = alt_response.json()
+                tweets = alt_data.get("tweets", [])
+                if tweets:
+                    print(f"✅ Got {len(tweets)} tweets from alternative endpoint")
+            
+            if not tweets:
+                print("❌ Still no tweets found")
+                return
         
         # Check the latest 5 tweets for any new ones
         new_count = 0
@@ -113,10 +134,7 @@ async def tweet(ctx, url: str):
     Usage: !tweet https://twitter.com/user/status/123456
     """
     try:
-        # Delete the user's command message to avoid duplicate embeds
-        await ctx.message.delete()
-        
-        # Extract tweet ID and username from URL
+        # Extract tweet ID and username from URL first
         match = re.search(r"(?:twitter\.com|x\.com)/([^/]+)/status/(\d+)", url)
         
         if not match:
@@ -128,14 +146,19 @@ async def tweet(ctx, url: str):
         # Build FxTwitter link
         fxtwitter_url = f"https://fxtwitter.com/{username}/status/{tweet_id}"
         
-        # Send it - Discord handles the rest!
+        # Try to delete the user's command message to avoid duplicate embeds
+        try:
+            await ctx.message.delete()
+        except discord.errors.Forbidden:
+            print("⚠️ Bot lacks 'Manage Messages' permission - cannot delete command")
+        except Exception as e:
+            print(f"⚠️ Could not delete message: {e}")
+        
+        # Send the FxTwitter link - Discord handles the rest!
         await ctx.send(fxtwitter_url)
         
         print(f"✅ Manual tweet posted: {tweet_id}")
         
-    except discord.errors.Forbidden:
-        print("⚠️ Bot lacks permission to delete messages")
-        await ctx.send(fxtwitter_url)
     except Exception as e:
         await ctx.send(f"❌ Error: {e}", delete_after=5)
         print(f"❌ Command error: {e}")
