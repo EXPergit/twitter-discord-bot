@@ -113,11 +113,14 @@ async def tweet(ctx, url: str):
     Usage: !tweet https://twitter.com/user/status/123456
     """
     try:
+        # Delete the user's command message to avoid duplicate embeds
+        await ctx.message.delete()
+        
         # Extract tweet ID and username from URL
         match = re.search(r"(?:twitter\.com|x\.com)/([^/]+)/status/(\d+)", url)
         
         if not match:
-            return await ctx.send("❌ Invalid tweet URL. Use: `!tweet https://twitter.com/user/status/123`")
+            return await ctx.send("❌ Invalid tweet URL. Use: `!tweet https://twitter.com/user/status/123`", delete_after=5)
         
         username = match.group(1)
         tweet_id = match.group(2)
@@ -130,8 +133,11 @@ async def tweet(ctx, url: str):
         
         print(f"✅ Manual tweet posted: {tweet_id}")
         
+    except discord.errors.Forbidden:
+        print("⚠️ Bot lacks permission to delete messages")
+        await ctx.send(fxtwitter_url)
     except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
+        await ctx.send(f"❌ Error: {e}", delete_after=5)
         print(f"❌ Command error: {e}")
 
 @bot.command()
