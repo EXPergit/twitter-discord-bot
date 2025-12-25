@@ -38,16 +38,15 @@ def save_posted(tweet_ids):
 posted_tweets = load_posted()
 
 def get_nfl_tweets_from_rss():
-    """Fetch latest NFL tweets using RSS feed via Nitter"""
+    """Fetch latest tweets with debug logs"""
     try:
-        # Using nitter.poast.org RSS feed (public Nitter instance)
-        rss_url = "https://nitter.poast.org/fishfishing1/rss"
-        
+        rss_url = "https://nitter.poast.org/fishfishing1/rss"  # 원하는 계정으로 바꾸세요
         feed = feedparser.parse(rss_url)
         
+        print(f"🔍 RSS feed fetched, entries: {len(feed.entries)}")  # 몇 개 가져왔는지 확인
+
         tweets = []
-        for entry in feed.entries[:10]:  # Get last 10 tweets
-            # Extract tweet ID from link
+        for entry in feed.entries[:10]:
             link = entry.link
             match = re.search(r'/status/(\d+)', link)
             if match:
@@ -57,7 +56,8 @@ def get_nfl_tweets_from_rss():
                     'text': entry.title,
                     'link': link
                 })
-        
+
+        print(f"✅ Tweets parsed from RSS: {[t['id'] for t in tweets]}")  # 어떤 트윗인지 확인
         return tweets
     except Exception as e:
         print(f"❌ RSS fetch error: {e}")
@@ -74,53 +74,45 @@ async def on_ready():
 
 @tasks.loop(minutes=2)
 async def tweet_loop():
-    """Check for new NFL tweets every 2 minutes"""
+    """Check for new tweets with debug logs"""
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
-    
+    print(f"🔗 Channel fetched: {channel}")  # 채널이 None인지 확인
+
     if not channel:
-        print("❌ Channel not found!")
+        print("❌ Channel not found or bot lacks permission!")
         return
-    
+
     try:
-        print("🔍 Checking for new NFL tweets...")
-        
-        # Get tweets from RSS
+        print("🔍 Checking for new tweets...")
         tweets = get_nfl_tweets_from_rss()
-        
+
         if not tweets:
             print("⚠️ No tweets found from RSS")
             return
-        
+
         print(f"📊 Found {len(tweets)} total tweets")
-        
-        # Check for new tweets
+        print(f"📝 Already posted tweets: {posted_tweets}")
+
         new_count = 0
         for tweet in tweets:
             tweet_id = tweet['id']
-            
-            # Skip if already posted
+
             if tweet_id in posted_tweets:
+                print(f"⏭ Skipping already posted tweet: {tweet_id}")
                 continue
-            
-            # Build FxTwitter link - Discord will auto-embed with video!
+
             fxtwitter_url = f"https://fxtwitter.com/fishfishing1/status/{tweet_id}"
-            
-            # Send to Discord
-            await channel.send(fxtwitter_url)
-            
-            # Track it
+            print(f"✉️ Sending tweet: {tweet_id} -> {fxtwitter_url}")
+            await channel.send(f"{tweet['text']}\n{fxtwitter_url}")
+
             posted_tweets.append(tweet_id)
             new_count += 1
-            
-            print(f"✅ Posted tweet: {tweet_id}")
-        
-        # Save to file
+
         if new_count > 0:
             save_posted(posted_tweets)
             print(f"📊 Posted {new_count} new tweet(s)")
         else:
-            print("✓ No new tweets")
-            
+            print("✓ No new tweets to post")
     except Exception as e:
         print(f"❌ Error in tweet loop: {e}")
 
