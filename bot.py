@@ -41,7 +41,7 @@ def get_nfl_tweets_from_rss():
     """Fetch latest NFL tweets using RSS feed via Nitter"""
     try:
         # Using nitter.poast.org RSS feed (public Nitter instance)
-        rss_url = "https://nitter.poast.org/tearlessflower/rss"
+        rss_url = "https://nitter.poast.org/moolhanjan/rss"
         
         feed = feedparser.parse(rss_url)
         
@@ -103,7 +103,7 @@ async def tweet_loop():
                 continue
             
             # Build FxTwitter link - Discord will auto-embed with video!
-            fxtwitter_url = f"https://fxtwitter.com/tearlessflower/status/{tweet_id}"
+            fxtwitter_url = f"https://fxtwitter.com/moolhanjan/status/{tweet_id}"
             
             # Send to Discord
             await channel.send(fxtwitter_url)
