@@ -40,7 +40,7 @@ posted_tweets = load_posted()
 def get_nfl_tweets_from_rss():
     """Fetch latest tweets with debug logs"""
     try:
-        rss_url = "https://nitter.privacyredirect.com/fishfishing1/rss"  # 원하는 계정으로 바꾸세요
+        rss_url = "https://nitter.privacyredirect.com/jiecia48/rss"  # 원하는 계정으로 바꾸세요
         feed = feedparser.parse(rss_url)
         
         print(f"🔍 RSS feed fetched, entries: {len(feed.entries)}")  # 몇 개 가져왔는지 확인
@@ -101,9 +101,9 @@ async def tweet_loop():
                 print(f"⏭ Skipping already posted tweet: {tweet_id}")
                 continue
 
-            fxtwitter_url = f"https://fxtwitter.com/fishfishing1/status/{tweet_id}"
+            fxtwitter_url = f"https://fxtwitter.com/jiecia48/status/{tweet_id}"
             print(f"✉️ Sending tweet: {tweet_id} -> {fxtwitter_url}")
-            await channel.send(f"{tweet['text']}\n{fxtwitter_url}")
+            await channel.send(fxtwitter_url)
 
             posted_tweets.append(tweet_id)
             new_count += 1
