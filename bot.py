@@ -6,6 +6,8 @@ import requests
 import re
 from dotenv import load_dotenv
 import feedparser
+import asyncio
+import random
 
 load_dotenv()
 
@@ -72,11 +74,11 @@ async def on_ready():
     # Start the auto-posting loop
     tweet_loop.start()
 
-@tasks.loop(minutes=2)
+@tasks.loop(seconds=60)
 async def tweet_loop():
     """Check for new tweets with debug logs"""
     channel = bot.get_channel(DISCORD_CHANNEL_ID)
-    print(f"🔗 Channel fetched: {channel}")  # 채널이 None인지 확인
+    print(f"🔗 Channel fetched: {channel}")
 
     if not channel:
         print("❌ Channel not found or bot lacks permission!")
@@ -101,9 +103,9 @@ async def tweet_loop():
                 print(f"⏭ Skipping already posted tweet: {tweet_id}")
                 continue
 
-            fxtwitter_url = f"https://fxtwitter.com/jiecia48/status/{tweet_id}"
-            print(f"✉️ Sending tweet: {tweet_id} -> {fxtwitter_url}")
-            await channel.send(fxtwitter_url)
+            url = f"https://fxtwitter.com/jiecia48/status/{tweet_id}"
+            print(f"✉️ Sending tweet: {tweet_id} -> {url}")
+            await channel.send(url)
 
             posted_tweets.append(tweet_id)
             new_count += 1
@@ -113,8 +115,16 @@ async def tweet_loop():
             print(f"📊 Posted {new_count} new tweet(s)")
         else:
             print("✓ No new tweets to post")
+
     except Exception as e:
         print(f"❌ Error in tweet loop: {e}")
+
+@tweet_loop.before_loop
+async def before_tweet_loop():
+    await bot.wait_until_ready()
+    delay = random.randint(0, 10)
+    print(f"⏱️ Initial jitter delay: {delay}s")
+    await asyncio.sleep(delay)
 
 @bot.command()
 async def tweet(ctx, url: str):
