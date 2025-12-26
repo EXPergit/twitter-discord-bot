@@ -40,7 +40,7 @@ posted_tweets = load_posted()
 def get_nfl_tweets_from_rss():
     """Fetch latest tweets with debug logs"""
     try:
-        rss_url = "https://nitter.privacyredirect.com/jiecia48/rss"  # 원하는 계정으로 바꾸세요
+        rss_url = "https://xcancel.com/jiecia48/rss"  # 원하는 계정으로 바꾸세요
         feed = feedparser.parse(rss_url)
         
         print(f"🔍 RSS feed fetched, entries: {len(feed.entries)}")  # 몇 개 가져왔는지 확인
