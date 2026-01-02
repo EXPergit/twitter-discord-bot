@@ -68,48 +68,35 @@ async def fetch_tweets():
 # Loop
 # =========================
 @tasks.loop(minutes=3)
-async def check_tweets():
-    global last_tweet_id
-
-    await bot.wait_until_ready()
-
+async def fetch_tweets():
     try:
-        channel = await bot.fetch_channel(DISCORD_CHANNEL_ID)
-    except Exception:
-        print("❌ Channel not found")
-        return
+        async with aiohttp.ClientSession() as session:
+            async with session.get(FX_API, timeout=15) as r:
+                print(f"🌐 FxTwitter status: {r.status}")
+                if r.status != 200:
+                    return []
 
-    print("🔍 Checking tweets...")
+                data = await r.json()
 
-    tweets = await fetch_tweets()
-    if not tweets:
-        print("⚠️ No tweets found")
-        return
+        tweets = []
 
-    newest = tweets[0]
+        # ✅ Case 1: "tweets" 배열 (가장 흔함)
+        if isinstance(data.get("tweets"), list):
+            for t in data["tweets"]:
+                tid = t.get("id")
+                if tid:
+                    tweets.append(tid)
 
-    # 첫 실행 시 기준점만 설정
-    if last_tweet_id is None:
-        last_tweet_id = newest
-        print(f"🧠 Initial tweet set: {newest}")
-        return
+        # ✅ Case 2: timeline.tweets 딕셔너리
+        elif isinstance(data.get("timeline", {}).get("tweets"), dict):
+            tweets = list(data["timeline"]["tweets"].keys())
 
-    # 새 트윗만 필터
-    new_tweets = []
-    for tid in tweets:
-        if tid == last_tweet_id:
-            break
-        new_tweets.append(tid)
+        print(f"✅ Parsed tweet IDs: {tweets[:5]}")
+        return tweets
 
-    # 오래된 것부터 전송
-    for tid in reversed(new_tweets):
-        url = f"https://x.com/{TWITTER_USERNAME}/status/{tid}"
-        await channel.send(url)
-        print(f"📨 Posted: {url}")
-        await asyncio.sleep(2)
-
-    if new_tweets:
-        last_tweet_id = newest
+    except Exception as e:
+        print(f"❌ FxTwitter error: {e}")
+        return []
 
 # =========================
 # Events
