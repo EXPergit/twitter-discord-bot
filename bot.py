@@ -14,7 +14,7 @@ DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
 TWITTER_USERNAME = "jiecia48"
 
-FX_API = f"https://api.fxtwitter.com/{TWITTER_USERNAME}"
+FX_API = f"https://api.fxtwitter.com/api/v1/user/{TWITTER_USERNAME}"
 
 # =========================
 # Discord
@@ -38,17 +38,10 @@ async def fetch_tweets():
                 data = await r.json()
 
         tweets = []
-
-        # Case 1: tweets list
-        if isinstance(data.get("tweets"), list):
-            for t in data["tweets"]:
-                tid = t.get("id")
-                if tid:
-                    tweets.append(tid)
-
-        # Case 2: timeline.tweets dict (fallback)
-        elif isinstance(data.get("timeline", {}).get("tweets"), dict):
-            tweets = list(data["timeline"]["tweets"].keys())
+        for t in data.get("tweets", []):
+            tid = t.get("id")
+            if tid:
+                tweets.append(tid)
 
         print(f"✅ Parsed tweet IDs: {tweets[:5]}")
         return tweets
@@ -58,12 +51,11 @@ async def fetch_tweets():
         return []
 
 # =========================
-# Loop (⚠️ on_ready보다 위에!)
+# Loop
 # =========================
 @tasks.loop(minutes=3)
 async def check_tweets():
     global last_tweet_id
-
     await bot.wait_until_ready()
 
     try:
@@ -94,7 +86,7 @@ async def check_tweets():
         new_tweets.append(tid)
 
     for tid in reversed(new_tweets):
-        url = f"https://x.com/{TWITTER_USERNAME}/status/{tid}"
+        url = f"https://fixupx.com/{TWITTER_USERNAME}/status/{tid}"
         await channel.send(url)
         print(f"📨 Posted: {url}")
         await asyncio.sleep(2)
