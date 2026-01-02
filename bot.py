@@ -36,14 +36,22 @@ def fetch_tweets():
             return []
 
         data = r.json()
+        ids = set()
 
-        tweets = []
-        for t in data.get("tweets", []):
-            tweet_id = str(t.get("id"))
-            if tweet_id:
-                tweets.append(tweet_id)
+        def walk(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k in ("id", "rest_id") and str(v).isdigit():
+                        ids.add(str(v))
+                    walk(v)
+            elif isinstance(obj, list):
+                for i in obj:
+                    walk(i)
 
-        print(f"✅ Tweets fetched: {tweets[:5]}")
+        walk(data)
+
+        tweets = sorted(ids, reverse=True)
+        print(f"✅ Parsed tweet IDs: {tweets[:5]}")
         return tweets[:5]
 
     except Exception as e:
