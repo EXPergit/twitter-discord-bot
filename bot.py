@@ -29,7 +29,7 @@ USERNAME = "jiecia48"
 NITTER_HTML_LIST = [
     f"https://nitter.net/{USERNAME}",
     f"https://nitter.poast.org/{USERNAME}",
-    f""https://nitter.privacyredirect.com/{USERNAME}",
+    f"https://nitter.privacyredirect.com/{USERNAME}",
 ]
 
 HEADERS = {
