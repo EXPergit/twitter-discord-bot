@@ -1,109 +1,120 @@
 import discord
 from discord.ext import commands, tasks
 import os
-import json
 import requests
 import re
 import asyncio
-import random
 from dotenv import load_dotenv
-from bs4 import BeautifulSoup
 
-# ======================
-# ENV / BOT SETUP
-# ======================
+# =========================
+# 환경 변수 로드
+# =========================
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
+TWITTER_USERNAME = "jiecia48"
 
+# =========================
+# 디스코드 봇 설정
+# =========================
 intents = discord.Intents.default()
-intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ======================
-# CONFIG
-# ======================
-USERNAME = "jiecia48"
+# =========================
+# 전역 상태
+# =========================
+posted_tweets = set()
 
-NITTER_HTML_LIST = [
-    f"https://nitter.net/{USERNAME}",
-    f"https://nitter.poast.org/{USERNAME}",
-    f"https://nitter.privacyredirect.com/{USERNAME}",
-]
-
+# =========================
+# HTTP 헤더 (403 회피용)
+# =========================
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (DiscordBot HTML Fetcher)"
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.google.com/",
+    "Connection": "keep-alive",
 }
 
-POSTED_FILE = "posted_tweets.json"
+# =========================
+# Twstalker 파서
+# =========================
+def fetch_tweets_from_twstalker():
+    url = f"https://twstalker.com/{TWITTER_USERNAME}"
+    try:
+        r = requests.get(url, headers=HEADERS, timeout=15)
 
-# ======================
-# POSTED TWEETS UTILS
-# ======================
-def load_posted():
-    if os.path.exists(POSTED_FILE):
-        try:
-            with open(POSTED_FILE, "r") as f:
-                return json.load(f)
-        except:
+        print(f"🌐 Twstalker status: {r.status_code}")
+
+        if r.status_code != 200:
             return []
-    return []
 
-def save_posted(ids):
-    with open(POSTED_FILE, "w") as f:
-        json.dump(ids[-100:], f, indent=2)
+        # 트윗 ID 추출
+        tweet_ids = set(re.findall(r"/status/(\d+)", r.text))
 
-posted_tweets = load_posted()
+        if not tweet_ids:
+            print("⚠️ No tweets found in HTML")
+            return []
 
-# ======================
-# HTML PARSER
-# ======================
-def get_tweets_from_html():
-    for url in NITTER_HTML_LIST:
-        try:
-            print(f"🌐 Trying HTML: {url}")
-            r = requests.get(
-                url,
-                headers=HEADERS,
-                timeout=10,
-                allow_redirects=True
-            )
+        tweets = sorted(tweet_ids, reverse=True)
+        print(f"✅ Tweets found: {tweets[:5]}")
 
-            if r.status_code != 200:
-                print(f"⚠️ Status code: {r.status_code}")
-                continue
+        return tweets[:5]
 
-            html = r.text
+    except Exception as e:
+        print(f"❌ Twstalker error: {e}")
+        return []
 
-            # 🔥 페이지 전체에서 status ID 직접 수집
-            ids = set(re.findall(r"/status/(\d+)", html))
+# =========================
+# 주기적 트윗 체크
+# =========================
+@tasks.loop(minutes=3)
+async def check_tweets():
+    await bot.wait_until_ready()
+    channel = bot.get_channel(DISCORD_CHANNEL_ID)
 
-            if not ids:
-                print("⚠️ No status IDs found in HTML")
-                continue
+    if channel is None:
+        print("❌ Channel not found")
+        return
 
-            tweets = sorted(ids, reverse=True)
-            print(f"✅ HTML tweets found: {tweets[:5]}")
-            return tweets[:10]
+    print("🔍 Checking for new tweets...")
 
-        except Exception as e:
-            print(f"❌ HTML error ({url}): {e}")
+    tweets = fetch_tweets_from_twstalker()
 
-    print("🚨 All HTML sources failed")
-    return []
-    
-# ======================
-# EVENTS
-# ======================
+    if not tweets:
+        print("⚠️ No tweets fetched")
+        return
+
+    for tweet_id in tweets:
+        if tweet_id in posted_tweets:
+            continue
+
+        tweet_url = f"https://twitter.com/{TWITTER_USERNAME}/status/{tweet_id}"
+        await channel.send(tweet_url)
+
+        posted_tweets.add(tweet_id)
+        print(f"📨 Posted: {tweet_url}")
+
+        await asyncio.sleep(2)
+
+# =========================
+# 이벤트
+# =========================
 @bot.event
 async def on_ready():
-    print(f"✅ Bot logged in as: {bot.user}")
-    print(f"📺 Channel ID: {DISCORD_CHANNEL_ID}")
-    print(f"📝 Already posted: {len(posted_tweets)} tweets")
-    tweet_loop.start()
+    print(f"🤖 Logged in as {bot.user}")
+    check_tweets.start()
 
-# ======================
+# =========================
+# 실행
+# =========================
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)# ======================
 # MAIN LOOP
 # ======================
 @tasks.loop(minutes=2)
