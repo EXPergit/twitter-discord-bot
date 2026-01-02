@@ -22,7 +22,7 @@ FX_API = f"https://api.fxtwitter.com/{TWITTER_USERNAME}"
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-last_tweet_id = None  # 중복 방지
+last_tweet_id = None
 
 # =========================
 # FxTwitter Fetch
@@ -39,55 +39,14 @@ async def fetch_tweets():
 
         tweets = []
 
-        timeline = data.get("timeline", {})
-        instructions = timeline.get("instructions", [])
-
-        for inst in instructions:
-            if inst.get("type") != "TimelineAddEntries":
-                continue
-
-            for entry in inst.get("entries", []):
-                content = entry.get("content", {})
-                item = content.get("itemContent", {})
-                tweet = (
-                    item.get("tweet_results", {})
-                    .get("result", {})
-                )
-
-                tid = tweet.get("rest_id")
-                if tid:
-                    tweets.append(tid)
-
-        return tweets
-
-    except Exception as e:
-        print(f"❌ FxTwitter error: {e}")
-        return []
-
-# =========================
-# Loop
-# =========================
-@tasks.loop(minutes=3)
-async def fetch_tweets():
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(FX_API, timeout=15) as r:
-                print(f"🌐 FxTwitter status: {r.status}")
-                if r.status != 200:
-                    return []
-
-                data = await r.json()
-
-        tweets = []
-
-        # ✅ Case 1: "tweets" 배열 (가장 흔함)
+        # Case 1: tweets list
         if isinstance(data.get("tweets"), list):
             for t in data["tweets"]:
                 tid = t.get("id")
                 if tid:
                     tweets.append(tid)
 
-        # ✅ Case 2: timeline.tweets 딕셔너리
+        # Case 2: timeline.tweets dict (fallback)
         elif isinstance(data.get("timeline", {}).get("tweets"), dict):
             tweets = list(data["timeline"]["tweets"].keys())
 
@@ -97,6 +56,51 @@ async def fetch_tweets():
     except Exception as e:
         print(f"❌ FxTwitter error: {e}")
         return []
+
+# =========================
+# Loop (⚠️ on_ready보다 위에!)
+# =========================
+@tasks.loop(minutes=3)
+async def check_tweets():
+    global last_tweet_id
+
+    await bot.wait_until_ready()
+
+    try:
+        channel = await bot.fetch_channel(DISCORD_CHANNEL_ID)
+    except Exception:
+        print("❌ Channel not found")
+        return
+
+    print("🔍 Checking tweets...")
+
+    tweets = await fetch_tweets()
+    if not tweets:
+        print("⚠️ No tweets found")
+        return
+
+    newest = tweets[0]
+
+    # 첫 실행 시 기준점만 설정
+    if last_tweet_id is None:
+        last_tweet_id = newest
+        print(f"🧠 Initial tweet set: {newest}")
+        return
+
+    new_tweets = []
+    for tid in tweets:
+        if tid == last_tweet_id:
+            break
+        new_tweets.append(tid)
+
+    for tid in reversed(new_tweets):
+        url = f"https://x.com/{TWITTER_USERNAME}/status/{tid}"
+        await channel.send(url)
+        print(f"📨 Posted: {url}")
+        await asyncio.sleep(2)
+
+    if new_tweets:
+        last_tweet_id = newest
 
 # =========================
 # Events
