@@ -50,13 +50,14 @@ def get_nfl_tweets_from_rss():
         tweets = []
         for entry in feed.entries[:10]:
             link = entry.link
-            match = re.search(r'/status/(\d+)', link)
+            
+            match = re.search(r'(?:/status/|/i/status/)(\d+)', link)
             if match:
                 tweet_id = match.group(1)
                 tweets.append({
-                    'id': tweet_id,
-                    'text': entry.title,
-                    'link': link
+                    "id": tweet_id,
+                    "text": entry.title,
+                    "link": link
                 })
 
         print(f"✅ Tweets parsed from RSS: {[t['id'] for t in tweets]}")  # 어떤 트윗인지 확인
