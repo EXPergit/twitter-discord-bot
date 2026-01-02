@@ -44,6 +44,16 @@ def get_nfl_tweets_from_rss():
     try:
         rss_url = "https://nitter.privacyredirect.com/jiecia48/rss"  # 원하는 계정으로 바꾸세요
         feed = feedparser.parse(rss_url)
+
+        print("DEBUG feed keys:", feed.keys())
+        print("DEBUG entries len:", len(feed.entries))
+        
+        if feed.entries:
+            e = feed.entries[0]
+            print("DEBUG entry keys:", e.keys())
+            print("DEBUG entry.link:", getattr(e, "link", None))
+            print("DEBUG entry.id:", getattr(e, "id", None))
+            print("DEBUG entry.links:", getattr(e, "links", None))
         
         print(f"🔍 RSS feed fetched, entries: {len(feed.entries)}")  # 몇 개 가져왔는지 확인
 
