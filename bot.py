@@ -63,37 +63,36 @@ def get_tweets_from_html():
     for url in NITTER_HTML_LIST:
         try:
             print(f"🌐 Trying HTML: {url}")
-            r = requests.get(url, headers=HEADERS, timeout=10)
+            r = requests.get(
+                url,
+                headers=HEADERS,
+                timeout=10,
+                allow_redirects=True
+            )
 
             if r.status_code != 200:
+                print(f"⚠️ Status code: {r.status_code}")
                 continue
 
-            soup = BeautifulSoup(r.text, "html.parser")
-            tweets = []
+            html = r.text
 
-            for item in soup.select(".timeline-item")[:10]:
-                link = item.select_one("a.tweet-link")
-                if not link:
-                    continue
+            # 🔥 페이지 전체에서 status ID 직접 수집
+            ids = set(re.findall(r"/status/(\d+)", html))
 
-                href = link.get("href", "")
-                match = re.search(r"/status/(\d+)", href)
-                if not match:
-                    continue
+            if not ids:
+                print("⚠️ No status IDs found in HTML")
+                continue
 
-                tweet_id = match.group(1)
-                tweets.append(tweet_id)
-
-            if tweets:
-                print(f"✅ HTML tweets found: {tweets}")
-                return tweets
+            tweets = sorted(ids, reverse=True)
+            print(f"✅ HTML tweets found: {tweets[:5]}")
+            return tweets[:10]
 
         except Exception as e:
             print(f"❌ HTML error ({url}): {e}")
 
     print("🚨 All HTML sources failed")
     return []
-
+    
 # ======================
 # EVENTS
 # ======================
